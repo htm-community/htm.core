@@ -231,7 +231,7 @@ class MultiColumnExperiment(PyExperimentSuite):
             if self.debug:
                 self.network.updateInferenceStats(stats, objectName=objName)
 
-            if touches is None and self.network.isObjectClassified(objName, minOverlap=30):
+            if touches is None and self.isObjectClassified(objName, minOverlap=30):
                 touches = sensation + 1
                 if not self.debug:
                     return touches
