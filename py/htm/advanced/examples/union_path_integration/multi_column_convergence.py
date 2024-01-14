@@ -231,7 +231,7 @@ class MultiColumnExperiment(PyExperimentSuite):
             if self.debug:
                 self.network.updateInferenceStats(stats, objectName=objName)
 
-            if touches is None and self.network.isObjectClassified(objName, minOverlap=30):
+            if touches is None and self.isObjectClassified(objName, minOverlap=30):
                 touches = sensation + 1
                 if not self.debug:
                     return touches
@@ -243,6 +243,44 @@ class MultiColumnExperiment(PyExperimentSuite):
         Returns the active representation in L2.
         """
         return self.network.getL2Representations()
+
+    def isObjectClassified(self, objectName, minOverlap=None, maxL2Size=None):
+        """
+        Return True if objectName is currently unambiguously classified by every L2
+        column. Classification is correct and unambiguous if the current L2 overlap
+        with the true object is greater than minOverlap and if the size of the L2
+        representation is no more than maxL2Size
+
+        :param minOverlap: min overlap to consider the object as recognized.
+                                             Defaults to half of the SDR size
+
+        :param maxL2Size: max size for the L2 representation
+                                            Defaults to 1.5 * SDR size
+
+        :return: True/False
+        """
+        l2sdr = self.getL2Representations()
+        try:
+            objectRepresentation = self.learnedObjects[objectName]
+        except:
+            return False
+        
+        if minOverlap is None:
+            minOverlap = self.sdrSize // 2
+        if maxL2Size is None:
+            maxL2Size = 1.5 * self.sdrSize
+
+        numCorrectClassifications = 0
+        for col in range(self.numColumns):
+            # Ignore inactive column
+            if len(l2sdr[col]) == 0:
+                continue
+
+            overlapWithObject = len(objectRepresentation[col] & l2sdr[col])
+            if (overlapWithObject >= minOverlap and len(l2sdr[col]) <= maxL2Size):
+                numCorrectClassifications += 1
+
+        return numCorrectClassifications == self.numColumns
 
 def plotSensationByColumn(suite, name):
     """
