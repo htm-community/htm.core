@@ -19,6 +19,62 @@ import numpy as np
 
 class Connections(CPPConnections):
     
+    def __init__(self, *args):
+        super().__init__(*args)
+        self._presynaptic_cells_for_segment = {}
+    
+    def presynapticCellsForSegment(self, segment):
+        """
+        Gets the index of this segment on its respective cell 
+        from the cache until the presynaptic cells change due to learning.
+        """
+        if segment in self._presynaptic_cells_for_segment:
+            cells = self._presynaptic_cells_for_segment[segment]
+
+        else:
+            # Not a cached value so access and cache
+            cells = super().presynapticCellsForSegment(segment)
+            self._presynaptic_cells_for_segment[segment] = cells
+
+        return cells
+
+    def createSynapse(self, segment, cell, initialPermanence):
+        """
+        Creates a synapse on the specified segment that connects to the presynaptic cell.
+        This also clears the presynaptic cells cache sice the presynaptic cells
+        may have changed.
+        """
+        super().createSynapse(segment, cell, initialPermanence)
+        self._presynaptic_cells_for_segment = {}
+
+    def adaptSegment(self, segment, activeInput, permanenceIncrement, permanenceDecrement, pruneZeroSynapses):
+        """
+        The primary method in charge of learning.   Adapts the permanence values of
+        the synapses based on the input SDR.  Learning is applied to a single
+        segment.  Permanence values are increased for synapses connected to input
+        bits that are turned on, and decreased for synapses connected to inputs
+        bits that are turned off.
+        *
+        @param segment  Index of segment to apply learning to.  Is returned by 
+               method getSegment.
+        @param inputVector  An SDR
+        @param increment  Change in permanence for synapses with active presynapses.
+        @param decrement  Change in permanence for synapses with inactive presynapses.
+        @param pruneZeroSynapses (default Talse) If set, synapses that reach minPermanence(aka. "zero")
+               are removed. This is used in TemporalMemory.
+               If true, then the presynaptic cells cache is cleared since synapses may be removed.
+        @param segmentThreshold (optional) (default 0) Minimum number of connected synapses for a segment
+               to be considered active. @see raisePermenencesToThreshold(). Equivalent to `SP.stimulusThreshold`.
+               If `pruneZeroSynapses` is used and synapses are removed, if the amount of synapses drops below 
+               `segmentThreshold`, we'll remove the segment as it can never become active again. See `destroySegment`.
+
+        """
+        super().adaptSegment(segment, activeInput, permanenceIncrement, permanenceDecrement, pruneZeroSynapses)
+        
+        if pruneZeroSynapses:
+            # Clear the cache
+            self._presynaptic_cells_for_segment = {}
+
     def numConnectedSynapsesForCells(self, cells):
         """
         Return the number of connected synapses in the connection for the list of cells.
