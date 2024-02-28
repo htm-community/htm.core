@@ -609,8 +609,8 @@ class ColumnPooler(object):
                 segment = segments[0] # Should only have one segment per cell
                 
             permanences.adaptSegment(segment, activeInput, permanenceIncrement, permanenceDecrement, False)
-            presynamptic_cells = np.array([permanences.presynapticCellForSynapse(synapse) for synapse in permanences.synapsesForSegment(segment)])
-            
+            presynamptic_cells = np.array(permanences.presynapticCellsForSegment(segment))
+        
             if sampleSize == -1:
                 active_cells_without_synapses = np.setdiff1d(growthCandidateInput, presynamptic_cells, assume_unique=True)
 
