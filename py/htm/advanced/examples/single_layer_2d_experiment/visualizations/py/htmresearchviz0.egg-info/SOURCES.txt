@@ -1,0 +1,10 @@
+MANIFEST.in
+setup.py
+htmresearchviz0/IPython_support.py
+htmresearchviz0/__init__.py
+htmresearchviz0.egg-info/PKG-INFO
+htmresearchviz0.egg-info/SOURCES.txt
+htmresearchviz0.egg-info/dependency_links.txt
+htmresearchviz0.egg-info/not-zip-safe
+htmresearchviz0.egg-info/top_level.txt
+htmresearchviz0/package_data/htmresearchviz0-bundle.js
