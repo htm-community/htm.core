@@ -17,7 +17,7 @@
     "rollup-plugin-node-resolve": "^2.0.0",
     "tape": "4",
     "uglify-js": "2",
-    "onchange": "3.2.1",
+    "onchange": "3.3.0",
     "http-server": "14.1.1"
   },
   "dependencies": {
