@@ -18,7 +18,7 @@
     "tape": "4",
     "uglify-js": "2",
     "onchange": "3.2.1",
-    "http-server": "0.10.0"
+    "http-server": "14.1.1"
   },
   "dependencies": {
     "d3": "^4.10.2"
