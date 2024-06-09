@@ -25,7 +25,7 @@ import numpy as np
 
 from htm.bindings.math import Random
 
-from visual_system.algorithms.connections import Connections
+from htm.advanced.algorithms.connections import Connections
 from htm.advanced.support import numpy_helpers as np2
 from htm.bindings.sdr import SDR
 
