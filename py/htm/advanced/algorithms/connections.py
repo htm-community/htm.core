@@ -181,3 +181,60 @@ class Connections(CPPConnections):
         overlaps = self.computeActivity(presynapticCells, False)
         return np.flatnonzero(overlaps >= activationThreshold)
 
+    def growSynapsesToSample(
+        self, 
+        newSegmentCells,
+        inputs,
+        sampleSize,
+        initialPermanence,
+        rng,
+        maxSegmentsPerCell=255
+        ):
+        """
+        For each specified segments, grow synapses to a random subset of the
+        inputs that aren't already connected to the segment.
+
+        @param newSegmentCells
+        The cells that need new segements to modify
+
+        @param inputs
+        The inputs to sample
+
+        @param sampleSize
+        The number of synapses to attempt to grow per segment
+
+        @param initialPermanence
+        The permanence for each added synapse
+
+        @param maxSegmentsPerCell
+        The maximum number of segments per cell.
+
+        @param rng
+        Random number generator
+
+        Note that the arguments are slightly different to those of 
+        nupic.research.core
+        """
+        for cell in  newSegmentCells:
+            newSegment = self.createSegment(cell, maxSegmentsPerCell)
+            self.growSynapses(newSegment, inputs, initialPermanence, rng, maxNew=sampleSize)
+
+    def presynapticCellsForPostsynapticCells(self, presynapticCells, connectedPermanence):
+        """
+        Answer a dictionary that for each postsynaptic cell activated by the presynaptic cells, holds a list 
+        of the presynaptic cells that caused that active cell to be active.
+        The key is the presynaptic cell that was activated.
+
+        Note that this is slow and really should be implemented in htm.core C++ code.
+        """
+        # Collect the feedforward cells that trigger active cells and associate between them.
+        accummulator = defaultdict(list)
+        for presynaptic_cell in presynapticCells:
+            synapses = self.synapsesForPresynapticCell(presynaptic_cell)
+            for synapse in synapses:
+                if self.permanenceForSynapse(synapse) >= connectedPermanence:
+                    segment =  self.segmentForSynapse(synapse)
+                    cell =  self.cellForSegment(segment)
+                    accummulator[cell].append(int(presynaptic_cell))
+
+        return accummulator
