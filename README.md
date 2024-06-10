@@ -47,11 +47,7 @@ For running C++ apps/examples/tests from binary release: none.
 If you want to use python, then obviously:
 
 - [Python](https://python.org/downloads/)
-    - Standard Python 3.7+ (Recommend using the latest)  [Tested with 3.8, 3.11.1]
-    - Standard Python 2.7
-      + We recommend the latest version of 2.7 where possible, but the system version should be fine.
-      + Python 2 is Not Supported on Windows, use Python 3 instead.
-      + Python 2 is not tested by our CI anomore. It may still work but we don't test it. We expect to drop support for Python2 around 2020.
+    - Standard Python 3.7+ (Recommend using the latest)  [Tested with 3.8, 3.11.1, 3.12.4]
     - [Anaconda Python](https://www.anaconda.com/products/individual#Downloads) 3.7+
       + On windows you must run from within 'Anaconda Prompt' not 'Command Prompt'.
       + Anaconda Python is not tested in our CI.
@@ -67,12 +63,13 @@ If you want to use python, then obviously:
   - You will probably also want to setup a [https://docs.python.org/3/library/venv.html(venv environment).
 
 - **C\+\+ compiler**: c\+\+11/17 compatible (ie. g++, clang\+\+).
+    On Windows, tested with MSVC 2019, 2022
   - boost library (if not a C\+\+17 or greater compiler that supports filesystem.) 
     If the build needs boost, it will automatically download and install boost with the options it needs.
   - CMake 3.7+  (MSVC 2019 needs CMake 3.14+, MSVC 2022 needs CMake 3.21+).  
     Install the latest using [https://cmake.org/download/](https://cmake.org/download/)
 
-Note: Windows MSVC 2019 runs as C\+\+17 by default so boost is not needed.  On linux use -std=c++17 compile option to avoid needing boost.
+Note: Windows MSVC 2019 and up runs as C\+\+17 by default so boost is not needed.  On linux use -std=c++17 compile option to avoid needing boost.
 
 ### Building from Source
 
@@ -89,11 +86,15 @@ git clone https://github.com/htm-community/htm.core
 
 #### Simple Python build (any platform)
 
-1) Prerequisites: install the following python packages: 
-	  `python -m ensurepip --upgrade`
-      `python -m pip install setuptools packaging`
-	  `pip -r install requirements.txt`
-
+1) Prerequisites: install the following python packages:
+```
+    python -m ensurepip --upgrade
+    python -m pip install setuptools packaging
+    pip install -r requirements.txt
+```
+    Note: requirements.txt limits numpy to version 1.23. You can use a newer
+	      version (i.e. 2.x) if you use at least Python 3.9.
+		  
 2) At a command prompt, `cd` to the root directory of this repository.
 
 3) Run: `python setup.py install --user --force`

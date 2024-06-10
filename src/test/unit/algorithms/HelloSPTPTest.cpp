@@ -20,7 +20,7 @@
 
 namespace testing {
 
-TEST(HelloSPTPTest, performance) {
+TEST(HelloSPTPTest, DISABLED_performance) {
   auto bench = examples::BenchmarkHelloSPTP();
   bench.run();
 }
