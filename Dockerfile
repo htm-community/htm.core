@@ -32,7 +32,8 @@ RUN apk add --update  \
     g++ \
     git \
     python3-dev \
-    py3-numpy 
+    py3-numpy \
+    py3-pip
 
 ADD . /usr/local/src/htm.core
 WORKDIR /usr/local/src/htm.core
