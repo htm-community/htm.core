@@ -1,0 +1,12 @@
+{
+    "columnDimensions":{       "_type":"uniform", "_value":[0, 20000]},
+    "potentialPct":{           "_type":"uniform", "_value":[0, 1]},
+    "localAreaDensity":{       "_type":"uniform", "_value":[0, 0.5]},
+    "stimulusThreshold":{      "_type":"uniform", "_value":[0, 1000]},
+    "synPermInactiveDec":{     "_type":"uniform", "_value":[0, 1]},
+    "synPermActiveInc":{       "_type":"uniform", "_value":[0, 1]},
+    "synPermConnected":{       "_type":"uniform", "_value":[0, 1]},
+    "minPctOverlapDutyCycle":{ "_type":"uniform", "_value":[0, 1]},
+    "dutyCyclePeriod":{        "_type":"uniform", "_value":[0, 10000]},
+    "boostStrength":{          "_type":"uniform", "_value":[0,  1000]}
+}

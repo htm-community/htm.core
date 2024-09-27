@@ -52,7 +52,7 @@ using namespace htm;
             , Real
             , bool
             , Real
-            , UInt
+            , Int
             , UInt
             , Real
             , Real
