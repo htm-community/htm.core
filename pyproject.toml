@@ -1,0 +1,21 @@
+[project]
+name = "htm.core"
+version = "2.1.16"
+description = "This is a Community Fork of the nupic.core"
+readme = "README.md"
+requires-python = ">=3"
+dependencies = [
+    "numpy",
+    "hexy",
+    "pybind11",
+    "pytest-cov",
+    "hexy",
+    "mock",
+    "cmake",
+    "requests",
+    "prettytable",
+    "setuptools>=75.8.0",
+]
+
+[build-system]
+requires = ["setuptools", "cmake"]
