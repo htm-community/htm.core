@@ -251,5 +251,3 @@ class HtmRestApiTest(unittest.TestCase):
     self._process.wait(1)
 
 
-if __name__ == "__main__":
-  unittest.main()

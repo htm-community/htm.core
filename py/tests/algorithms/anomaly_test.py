@@ -90,5 +90,3 @@ class AnomalyTest(TestCaseBase):
 
     self.assertRaises(ValueError, an.calculateRawAnomaly, activeCols, predictiveCols)
 
-if __name__ == "__main__":
-  unittest.main()

@@ -1,7 +1,8 @@
 # -----------------------------------------------------------------------------
 # Numenta Platform for Intelligent Computing (NuPIC)
-# Copyright (C) 2019, Numenta, Inc.  
+# Copyright (C) 2019, Numenta, Inc.  
 # modified 4/4/2022 - newer version
+# modified 12/12/2024 - use FetchContent, David Keeney dkeeney@gmail.com
 #
 # Unless you have purchased from
 # Numenta, Inc. a separate commercial license for this software code, the
@@ -17,51 +18,52 @@
 # See the GNU Affero Public License for more details.
 #
 # You should have received a copy of the GNU Affero Public License
-# along with this program.  If not, see http://www.gnu.org/licenses.
+# along with this program.  If not, see http://www.gnu.org/licenses.
 #
 # http://numenta.org/licenses/
 # -----------------------------------------------------------------------------
+
 # This downloads and builds the sqlite3 library.
 #
-# SQLite is a C-language library that implements a small, fast, self-contained, 
-#        high-reliability, full-featured, SQL database engine. SQLite is the most used 
-#        database engine in the world.
+
+# SQLite is a C-language library that implements a small, fast, self-contained, 
+#        high-reliability, full-featured, SQL database engine. SQLite is the most used 
+#        database engine in the world.
 #
-#            The current release is 3.34.1 (2020-06-18)
-#            The repository is at https://www.sqlite.org/2020/sqlite-autoconf-3340100.tar.gz
-#
-#
-if(EXISTS   ${REPOSITORY_DIR}/build/ThirdParty/share/sqlite3.tar.gz)
-    set(URL ${REPOSITORY_DIR}/build/ThirdParty/share/sqlite3.tar.gz)
+include(FetchContent)
+
+set(dependency_url "https://www.sqlite.org/2024/sqlite-amalgamation-3470000.zip")
+set(local_override "${CMAKE_SOURCE_DIR}/build/Thirdparty/sqlite3")
+
+# Check if local path exists and if so, use it as-is.
+if(EXISTS ${local_override})
+    message(STATUS "  Obtaining sqlite3 from local override: ${local_override}")
+    FetchContent_Populate(
+        sqlite3
+        SOURCE_DIR ${local_override}
+		QUIET
+    )
 else()
-    set(URL "https://www.sqlite.org/2022/sqlite-autoconf-3380200.tar.gz")
+    message(STATUS "  Obtaining sqlite3 from: ${dependency_url}")
+    FetchContent_Populate(
+        sqlite3
+        URL ${dependency_url}
+		QUIET
+    )
 endif()
 
-message(STATUS "Obtaining sqlite3")
-include(DownloadProject/DownloadProject.cmake)
-download_project(PROJ sqlite3
-	PREFIX ${EP_BASE}/sqlite3
-	URL ${URL}
-	GIT_SHALLOW ON
-	UPDATE_DISCONNECTED 1
-	QUIET
-	)
-    
-# SQLite does not provide a CMakeList.txt to buld with so we provide the following lines to perform the compile here.
-# Since we are building here and not in the source folder, the library will show up directly under build/ThirdParty.
-# The library will be folded into htm.core.
+
+# SQLite does not provide a CMakeList.txt to build with so we provide the following 
+# lines to perform the compile here.
 # Reference the include as #include "sqlite3.h".
 
-set(SRCS ${sqlite3_SOURCE_DIR}/sqlite3.c ${sqlite3_SOURCE_DIR}/sqlite3.h)
-add_library(sqlite3 STATIC  ${SRCS} )
+set(sqlite3_srcs "${sqlite3_SOURCE_DIR}/sqlite3.c")
+set(sqlite3_hdrs "${sqlite3_SOURCE_DIR}/sqlite3.h")
+
+add_library(sqlite3 OBJECT ${sqlite3_srcs} ${sqlite3_hdrs})
 target_compile_definitions(sqlite3 PRIVATE ${COMMON_COMPILER_DEFINITIONS})
+set_target_properties(sqlite3 PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(sqlite3 PUBLIC "${sqlite3_SOURCE_DIR}")
+set(sqlite3_INCLUDE_DIR "${sqlite3_SOURCE_DIR}")
 
-if (MSVC)
-  set(sqlite3_LIBRARIES   "${CMAKE_BINARY_DIR}$<$<CONFIG:Release>:/Release/sqlite3.lib>$<$<CONFIG:Debug>:/Debug/sqlite3.lib>") 
-else()
-  set(sqlite3_LIBRARIES   ${CMAKE_BINARY_DIR}/${CMAKE_STATIC_LIBRARY_PREFIX}sqlite3${CMAKE_STATIC_LIBRARY_SUFFIX}) 
-endif()
-
-FILE(APPEND "${EXPORT_FILE_NAME}" "sqlite3_INCLUDE_DIRS@@@${sqlite3_SOURCE_DIR}\n")
-FILE(APPEND "${EXPORT_FILE_NAME}" "sqlite3_LIBRARIES@@@${sqlite3_LIBRARIES}\n")
-
+set(sqlite3_TARGET sqlite3)

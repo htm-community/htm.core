@@ -809,6 +809,3 @@ class ColumnPoolerTest(unittest.TestCase):
                         "Incorrect object representations - expecting single object")
 
 
-
-if __name__ == "__main__":
-    unittest.main()

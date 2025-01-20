@@ -19,7 +19,8 @@
 
 import numpy as np
 import unittest
-from mock import patch
+#from mock import patch
+from unittest.mock import patch  # New import (for Python 3.3+)
 
 from htm.bindings.sdr import SDR
 from htm.encoders.coordinate import CoordinateEncoder
@@ -316,6 +317,3 @@ def overlapsForUnrelatedAreas(n, w, radius, repetitions=100, verbose=False):
     return overlapsForRelativeAreas(n, w, np.array([0, 0]), radius, dPosition=np.array([0, radius * 10]), num=repetitions, verbose=verbose)
 
 
-
-if __name__ == "__main__":
-    unittest.main()

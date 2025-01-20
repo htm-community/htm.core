@@ -15,8 +15,8 @@
 # along with this program.  If not, see http://www.gnu.org/licenses.
 # -----------------------------------------------------------------------------
 
-cmake_minimum_required(VERSION 3.7)
-project(htm_core CXX C)
+cmake_minimum_required(VERSION 3.21)
+project(htm_core LANGUAGES CXX C)
 
 message(STATUS "Configuring htm_core tests")
 ###############################################################
@@ -146,16 +146,15 @@ message(STATUS "In Test, External_Includes: ${EXTERNAL_INCLUDES}")
 add_executable(${unit_tests_executable} ${src_executable_gtests})
 target_link_libraries(${unit_tests_executable} 
     ${core_library}
-#    ${src_lib_shared}
-    ${gtest_LIBRARIES}
+    gtest
     ${COMMON_OS_LIBS}
     ${INTERNAL_LINKER_FLAGS}
 )
 target_include_directories(${unit_tests_executable} PRIVATE 
 	examples/rest
 	${CORE_LIB_INCLUDES}
-	SYSTEM ${gtest_INCLUDE_DIRS}
-	SYSTEM ${EXTERNAL_INCLUDES})
+	${EXTERNAL_INCLUDES}
+)
 target_compile_definitions(${unit_tests_executable} PRIVATE ${COMMON_COMPILER_DEFINITIONS})
 target_compile_options(${unit_tests_executable} PUBLIC ${INTERNAL_CXX_FLAGS})
 add_dependencies(${unit_tests_executable} ${core_library}) 
@@ -188,7 +187,5 @@ add_custom_target(tests_all
                   
 install(TARGETS
         ${unit_tests_executable}
-        RUNTIME DESTINATION bin
-        LIBRARY DESTINATION lib
-        ARCHIVE DESTINATION lib)
+        RUNTIME DESTINATION ${CMAKE_SOURCE_DIR}/build/Release/bin)
 

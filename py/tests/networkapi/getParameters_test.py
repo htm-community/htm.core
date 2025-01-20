@@ -283,5 +283,3 @@ class NetworkAPI_getParameters_Test(unittest.TestCase):
     self.assertEqual(json_list, expected)
     
   
-if __name__ == "__main__":
-  unittest.main()

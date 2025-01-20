@@ -185,5 +185,3 @@ class ConnectionsTest(unittest.TestCase):
         self.assertEqual(segments_should_be, filtered_segments, "Segments were not filtered correctly")
 
 
-if __name__ == "__main__":
-    unittest.main()

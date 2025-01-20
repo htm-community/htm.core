@@ -1,6 +1,7 @@
 # -----------------------------------------------------------------------------
 # HTM Community Edition of NuPIC
 # Copyright (C) 2013-2015, Numenta, Inc.
+#   Migrated to scikit-build-core:  David Keeney, dkeeney@gmail.com, Dec 2024
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero Public License version 3 as
@@ -15,14 +16,12 @@
 # along with this program.  If not, see http://www.gnu.org/licenses.
 # -----------------------------------------------------------------------------
 
-cmake_minimum_required(VERSION 3.7)
-project(htm_core CXX)
+cmake_minimum_required(VERSION 3.21)
+project(htm_core LANGUAGES CXX)
 
 message(STATUS "Configuring htm_core src")
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
-set(CMAKE_VERBOSE_MAKEFILE OFF) # toggle for cmake debug
-include(src/NupicLibraryUtils) # for combining static libs
-include(src/ExpandStaticLib)   # for creating objects from a static lib
+set(CMAKE_VERBOSE_MAKEFILE ON) # toggle for cmake debug
 
 #
 # NuPIC CMake options
@@ -62,6 +61,7 @@ configure_file(
 # libraries in a subsequent step to produce the htm_core "combined" static
 # library.
 #
+
 set(src_objlib LibrarySource)
 
 
@@ -238,14 +238,14 @@ add_library(${src_objlib} OBJECT
 )
 # shared libraries need PIC
 target_compile_options( ${src_objlib} PUBLIC ${INTERNAL_CXX_FLAGS})
+set_target_properties(${src_objlib} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 if(MSVC)
   set_property(TARGET ${src_objlib} PROPERTY LINK_LIBRARIES ${INTERNAL_LINKER_FLAGS})
 endif()
 target_compile_definitions(${src_objlib} PRIVATE ${COMMON_COMPILER_DEFINITIONS})
-target_compile_definitions(${src_objlib} PRIVATE ${yaml_DEFINE})
 target_include_directories(${src_objlib} PRIVATE 
 		${CORE_LIB_INCLUDES} 
-		SYSTEM ${EXTERNAL_INCLUDES}
+		${EXTERNAL_INCLUDES}
 		)
 
 if(${HTM_IWYU})
@@ -254,28 +254,20 @@ if(${HTM_IWYU})
 endif()
 
 ############ Building Static LIB #############################################
-# build static libhtm_core_solo.a without yaml and boost.
+# build static htm_core_solo.a with libyaml, sqlite3, common.
 # uses objects compiled for src_objlib
+# Add the object libraries to the source list of htm_core
+set(EXTRA_LIBS
+    $<TARGET_OBJECTS:${libyaml_TARGET}>
+    $<TARGET_OBJECTS:${sqlite3_TARGET}>
+    $<TARGET_OBJECTS:${common_TARGET}>
+)
 
-set(src_lib_static htm_core_solo)
-add_library(${src_lib_static} STATIC $<TARGET_OBJECTS:${src_objlib}>)
+add_library(${core_library} STATIC $<TARGET_OBJECTS:${src_objlib}> ${EXTRA_LIBS})
+
 if(MSVC)
-  set_property(TARGET ${src_lib_static} PROPERTY LINK_LIBRARIES ${INTERNAL_LINKER_FLAGS})
+  set_property(TARGET ${core_library} PROPERTY LINK_LIBRARIES ${INTERNAL_LINKER_FLAGS})
 endif()
-#
-# Create the libhtm_core.a as a "combined" static library by merging htm_core_static
-# with our external static libraries
-# NOTE: cannot use target_link_libraries( ) with the add_library for STATIC.
-#       so we have to merge them in a different way.
-#
-set(src_combined_htmcore_source_archives
-    ${src_lib_static}
-    ${yaml_LIBRARIES}
-    ${sqlite3_LIBRARIES}
-    ${Boost_LIBRARIES}
-    ${common_LIBRARIES}
-    )
-merge_static_libraries(${core_library} "${src_combined_htmcore_source_archives}")
 
 ############ Building Shared LIB #############################################
 # builds libhtm_core.so for Linux,OSx and 
@@ -285,37 +277,20 @@ merge_static_libraries(${core_library} "${src_combined_htmcore_source_archives}"
 # For Linux, OSx; the .so file will contain all symbols.
 #
 if(MSVC)
-	# NOTE: this disables shared lib for Windows.
+  # NOTE: this disables shared lib for Windows.
 else()
-    # First extract static libraries into an Object Library
-	# Note that these libraries must already exist (from depenancies)
-	set(all_object_locations)
-	set(src_externLibs
-            ${yaml_LIBRARIES}
-            ${sqlite3_LIBRARIES}
-            ${Boost_LIBRARIES}
-            ${common_LIBRARIES}
-            )
-	set(lib_locations_separator "++++")
-    string(REPLACE ";" ${lib_locations_separator}
-           escaped_lib_locations_arg "${src_externLibs}")
-
-	ExpandStaticLib( ${src_lib_shared}
-	    "${escaped_lib_locations_arg}"
-	    "${lib_locations_separator}"
-	    "${CMAKE_CURRENT_BINARY_DIR}"
-	    "${CMAKE_AR}"
-	    )
-	# build shared lib with yaml and boost resolved
-	# uses objects compiled for src_objlib
-	add_library(${src_lib_shared} SHARED 
-		$<TARGET_OBJECTS:${src_objlib}>
-		${all_object_locations})
-	set_target_properties(${src_lib_shared} PROPERTIES OUTPUT_NAME ${core_library})
-	target_link_libraries(${src_lib_shared}  
-		${COMMON_OS_LIBS}
-	        )
+  add_library(${src_lib_shared} SHARED
+      $<TARGET_OBJECTS:${src_objlib}>
+  )
+  target_link_libraries(${src_lib_shared}
+      	PUBLIC
+	    ${libyaml_TARGET}
+	    ${sqlite3_TARGET}
+	    ${common_TARGET}
+  )
+  set_target_properties(${src_lib_shared} PROPERTIES OUTPUT_NAME ${core_library})
 endif()
+
 
 
 
@@ -323,10 +298,11 @@ endif()
 ############ TEST #############################################
 # Test
 # The tests were placed in a separate file to avoid clutering up this file.
+
 add_subdirectory(test)
 
-
 ########### EXAMPLES ##############################################
+
 ## Example custom executable
 #
 ## Setup hello
@@ -417,6 +393,7 @@ target_include_directories(${src_executable_napi_hello_database} PRIVATE
 #
 set(src_executable_mnistsp mnist_sp)
 add_executable(${src_executable_mnistsp} examples/mnist/MNIST_SP.cpp)
+target_compile_options(${src_executable_mnistsp} PRIVATE /wd4244)
 target_link_libraries(${src_executable_mnistsp} 
         ${INTERNAL_LINKER_FLAGS}
         ${core_library}
@@ -446,31 +423,30 @@ target_link_libraries(${src_executable_mnistsp}
   target_include_directories(${src_executable_rest_server} PRIVATE 
         ${CORE_LIB_INCLUDES} 
         examples/rest
-	SYSTEM ${EXTERNAL_INCLUDES}
-        )
+	    SYSTEM ${EXTERNAL_INCLUDES}
+  )
     
   set(src_executable_rest_client rest_client)
   add_executable(${src_executable_rest_client} examples/rest/client.cpp)
   target_link_libraries(${src_executable_rest_client} 
-          ${INTERNAL_LINKER_FLAGS}
-          ${core_library}
-          ${COMMON_OS_LIBS}
+        ${INTERNAL_LINKER_FLAGS}
+        ${core_library}
+        ${COMMON_OS_LIBS}
   )
   target_compile_options(${src_executable_rest_client} PUBLIC ${INTERNAL_CXX_FLAGS})
   target_compile_definitions(${src_executable_rest_client} PRIVATE ${COMMON_COMPILER_DEFINITIONS})
   target_include_directories(${src_executable_rest_client} PRIVATE 
         ${CORE_LIB_INCLUDES} 
-	SYSTEM ${EXTERNAL_INCLUDES}
-        )
+	    SYSTEM ${EXTERNAL_INCLUDES}
+  )
+
 
 ############ INSTALL ######################################
 #
-# Install targets into CMAKE_INSTALL_PREFIX
-#
+# Install C++ targets into CMAKE_INSTALL_PREFIX if doing a C++ library build.
 install(TARGETS
         ${core_library}
-        LIBRARY DESTINATION lib
-        ARCHIVE DESTINATION lib)
+        DESTINATION ${CMAKE_SOURCE_DIR}/build/Release/lib)
         
 install(TARGETS
         ${src_executable_hello}
@@ -479,77 +455,47 @@ install(TARGETS
         ${src_executable_mnistsp}
         ${src_executable_rest_server}
         ${src_executable_rest_client}
-        RUNTIME DESTINATION bin
-        LIBRARY DESTINATION lib
-        ARCHIVE DESTINATION lib)
+        RUNTIME DESTINATION ${CMAKE_SOURCE_DIR}/build/Release/bin)
 if(MSVC)
 else()	
   install(TARGETS
         ${src_dyn_executable_hello}
         ${src_lib_shared}
-        RUNTIME DESTINATION bin
-        LIBRARY DESTINATION lib
-        ARCHIVE DESTINATION lib)
+        RUNTIME DESTINATION ${CMAKE_SOURCE_DIR}/build/Release/bin
+        LIBRARY DESTINATION ${CMAKE_SOURCE_DIR}/build/Release/lib
+        ARCHIVE DESTINATION ${CMAKE_SOURCE_DIR}/build/Release/lib)
 endif()
 
 # Version.hpp is also used by the htm.bindings release/deployment system
 install(FILES ${PROJECT_BINARY_DIR}/Version.hpp
-      DESTINATION include)
+      DESTINATION ${CMAKE_SOURCE_DIR}/build/Release/include)
 
+# Install the source include files
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/htm
       MESSAGE_NEVER
-      DESTINATION include/
-      FILES_MATCHING PATTERN "*.h*"
-      PATTERN "*.hpp.in" EXCLUDE)
+      DESTINATION ${CMAKE_SOURCE_DIR}/build/Release/include
+      FILES_MATCHING PATTERN "*.h*" PATTERN "*.hpp.in" EXCLUDE)
 
-install(DIRECTORY ${cereal_INCLUDE_DIRS}/cereal
+# Install the external dependency include files
+foreach(dir ${EXTERNAL_INCLUDES})
+    install(DIRECTORY "${dir}/"
+	    MESSAGE_NEVER
+        DESTINATION "${CMAKE_SOURCE_DIR}/build/Release/include"
+        FILES_MATCHING PATTERN "*.h*" PATTERN "*.hpp" PATTERN "*.inl")
+endforeach()
+# Eigen requires special handling
+# locate the Eigen source directory and copy all of Eigen folder to build/Release/Include/Eigen.
+# The Eigen folder contains more than just include files.
+install(DIRECTORY ${eigen_INCLUDE_DIR}/Eigen
       MESSAGE_NEVER
-      DESTINATION include/
-      FILES_MATCHING PATTERN "*.h*"
-      PATTERN "*.hpp.in" EXCLUDE)
-
-install(FILES ${cpp-httplib_INCLUDE_DIRS}/httplib.h
-      DESTINATION include)
-
-install(DIRECTORY "${REPOSITORY_DIR}/external/common/include/"
-      MESSAGE_NEVER
-      DESTINATION include)
-      
-# include the python wheel if it exists.
-# run "python3 setup.py install --user"
-# and "python3 setup.py bdist_wheel"
-# prior to this to create the whl file.
-install(DIRECTORY "${CMAKE_INSTALL_PREFIX}/distr/dist/"
-	  MESSAGE_NEVER
-	  DESTINATION py
-	  FILES_MATCHING PATTERN "*.whl")
-
-# copy requirements.txt into dist/ 
-install(FILES ${REPOSITORY_DIR}/requirements.txt
-        DESTINATION distr/dist)
+	  DESTINATION ${CMAKE_SOURCE_DIR}/build/Release/include
+)
+    
+install(FILES 
+    ${CMAKE_SOURCE_DIR}/LICENSE.txt  
+    ${CMAKE_SOURCE_DIR}/README.md  
+    ${CMAKE_SOURCE_DIR}/VERSION  
+    DESTINATION ${CMAKE_SOURCE_DIR}/build/Release
+)
 
 
-############### PACKAGE ###########################
-#
-# `make package` results in
-# htm_cpp-${VERSION}-${PLATFORM}${BITNESS}${PLATFORM_SUFFIX}.tar.gz binary release
-#
-#   TODO:  The version numbers need to be automatically incremented.
-message(STATUS "Packaging version: ${VERSION} in CPACK")
-set(CPACK_PACKAGE_NAME "htm.core")
-set(CPACK_PACKAGE_VENDOR "https://github.com/htm-community/htm.core")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "htm.core - Community implementation of Numenta's algorthms.")
-set(CPACK_PACKAGE_VERSION ${VERSION})
-set(CPACK_PACKAGE_VERSION_MAJOR ${MAJOR})
-set(CPACK_PACKAGE_VERSION_MINOR ${MINOR})
-set(CPACK_PACKAGE_VERSION_PATCH ${PATCH})
-set(CPACK_PACKAGE_INSTALL_DIRECTORY "htm.core")
-
-if(MSVC)
-	set(CPACK_GENERATOR "ZIP")
-else()
-	set(CPACK_GENERATOR "TGZ")
-endif()
-set(CPACK_RESOURCE_FILE_LICENSE "${REPOSITORY_DIR}/LICENSE.txt")
-set(CPACK_PACKAGE_FILE_NAME "htm_core-${VERSION}-${PLATFORM}${BITNESS}${PLATFORM_SUFFIX}")
-include(CPack)

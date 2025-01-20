@@ -1,6 +1,7 @@
 # -----------------------------------------------------------------------------
 # HTM Community Edition of NuPIC
 # Copyright (C) 2013-2015, Numenta, Inc.
+#   Migrated to scikit-build-core:  David Keeney, dkeeney@gmail.com, Dec 2024
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero Public License version 3 as
@@ -26,14 +27,22 @@
 # For PyBind11 info See: https://pybind11.readthedocs.io/en/stable/compiling.html
 #######################################################################
 
-cmake_minimum_required(VERSION 3.7)
+cmake_minimum_required(VERSION 3.21)
 project(htm_core CXX)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set(CMAKE_VERBOSE_MAKEFILE OFF) # toggle for cmake debug
 message(STATUS "Configuring Python interface")
 message(STATUS "   installing in ${CMAKE_INSTALL_PREFIX}")
+message(STATUS "CMAKE_CURRENT_SOURCE_DIR= ${CMAKE_CURRENT_SOURCE_DIR}")
+message(STATUS "CORE_LIB_INCLUDES: ${CORE_LIB_INCLUDES}")
 
+# Find Python
+find_package(Python COMPONENTS Interpreter Development REQUIRED)
+find_package(pybind11 CONFIG REQUIRED)
+
+set(htm_core_lib_path  "${HTM_CORE_LIB_DIR}/${CMAKE_STATIC_LIBRARY_PREFIX}htm_core${CMAKE_STATIC_LIBRARY_SUFFIX}")
+message(STATUS "htm_core_lib_path = ${htm_core_lib_path}")
 #
 # Python support
 #
@@ -100,57 +109,38 @@ source_group("test"       FILES ${src_py_test_files})
 #       and: https://github.com/pybind/pybind11/issues/1295
 #          
 
-# setup the distr directory
-set(distr ${CMAKE_INSTALL_PREFIX}/distr)
-file(MAKE_DIRECTORY ${distr})
-file(COPY ${REPOSITORY_DIR}/bindings/py/packaging/. DESTINATION ${distr} REGEX  ".*__pycache__" EXCLUDE)
-#file(COPY ${REPOSITORY_DIR}/bindings/py/tests/. DESTINATION ${distr}/src/htm/tests REGEX  ".*__pycache__" EXCLUDE)
-file(COPY ${REPOSITORY_DIR}/py/htm/. DESTINATION ${distr}/src/htm REGEX  ".*__pycache__" EXCLUDE)
-#file(COPY ${REPOSITORY_DIR}/py/tests/. DESTINATION ${distr}/src/htm/tests REGEX  ".*__pycache__" EXCLUDE)
-message(STATUS "Copied .py sources to ${distr}/src/htm")
 
-# determine which version of binding to build
-if ("${BINDING_BUILD}" STREQUAL "Python2")
-  set(PYBIND11_PYTHON_VERSION 2.7)
-else()
-  set(BINDING_BUILD Python3)
-endif()
-add_subdirectory(${pybind11_SOURCE_DIR} ${pybind11_BINARY_DIR})
-set(pybind11_INCLUDE_DIRS ${pybind11_SOURCE_DIR}/include)
 
 
 # It is ready to use pybind11_add_module() macro.
 # For details: https://pybind11.readthedocs.io/en/stable/compiling.html#cmake
 
-
 set(algorithms_shared_lib algorithms)
 pybind11_add_module(${algorithms_shared_lib} ${src_py_algorithms_files} )
 target_link_libraries(${algorithms_shared_lib} PRIVATE 
-        ${core_library}
+        ${htm_core_lib_path}
         ${COMMON_OS_LIBS}
         )
 target_compile_options(${algorithms_shared_lib} PUBLIC ${INTERNAL_CXX_FLAGS})
 target_compile_definitions(${algorithms_shared_lib} PRIVATE ${COMMON_COMPILER_DEFINITIONS})
 target_include_directories(${algorithms_shared_lib} PRIVATE 
         ${CORE_LIB_INCLUDES}
-        ${PROJECT_SOURCE_DIR}
-	SYSTEM ${PYTHON_INCLUDE_DIRS}
-	SYSTEM ${pybind11_INCLUDE_DIRS}
-	SYSTEM ${EXTERNAL_INCLUDES}
+        ${CMAKE_CURRENT_SOURCE_DIR}
+	    SYSTEM ${PYTHON_INCLUDE_DIRS}
+	    SYSTEM ${pybind11_INCLUDE_DIRS}
         )
-
 
 set(sdr_shared_lib sdr)
 pybind11_add_module(${sdr_shared_lib} ${src_py_sdr_files} )
 target_link_libraries(${sdr_shared_lib} PRIVATE
-        ${core_library}
+        ${htm_core_lib_path}
         ${COMMON_OS_LIBS}
         )
 target_compile_options(${sdr_shared_lib} PUBLIC ${INTERNAL_CXX_FLAGS})
 target_compile_definitions(${sdr_shared_lib} PRIVATE ${COMMON_COMPILER_DEFINITIONS})
 target_include_directories(${sdr_shared_lib} PRIVATE
         ${CORE_LIB_INCLUDES}
-        ${PROJECT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}
         SYSTEM ${PYTHON_INCLUDE_DIRS}
         SYSTEM ${pybind11_INCLUDE_DIRS}
         SYSTEM ${EXTERNAL_INCLUDES}
@@ -160,14 +150,14 @@ target_include_directories(${sdr_shared_lib} PRIVATE
 set(encoders_shared_lib encoders)
 pybind11_add_module(${encoders_shared_lib} ${src_py_encoders_files} )
 target_link_libraries(${encoders_shared_lib} PRIVATE 
-        ${core_library}
+        ${htm_core_lib_path}
         ${COMMON_OS_LIBS}
         )
 target_compile_options(${encoders_shared_lib} PUBLIC ${INTERNAL_CXX_FLAGS})
 target_compile_definitions(${encoders_shared_lib} PRIVATE ${COMMON_COMPILER_DEFINITIONS})
 target_include_directories(${encoders_shared_lib} PRIVATE 
         ${CORE_LIB_INCLUDES}
-        ${PROJECT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}
         SYSTEM ${PYTHON_INCLUDE_DIRS}
         SYSTEM ${pybind11_INCLUDE_DIRS}
         SYSTEM ${EXTERNAL_INCLUDES}
@@ -177,14 +167,14 @@ target_include_directories(${encoders_shared_lib} PRIVATE
 set(engine_shared_lib engine_internal)
 pybind11_add_module(${engine_shared_lib} ${src_py_engine_files})
 target_link_libraries(${engine_shared_lib} PRIVATE
-		${core_library}
+		${htm_core_lib_path}
 		${COMMON_OS_LIBS}
 		)
 target_compile_options(${engine_shared_lib} PUBLIC ${INTERNAL_CXX_FLAGS})
 target_compile_definitions(${engine_shared_lib} PRIVATE ${COMMON_COMPILER_DEFINITIONS})
 target_include_directories(${engine_shared_lib} PRIVATE 
-	${CORE_LIB_INCLUDES}
-        ${PROJECT_SOURCE_DIR}
+        ${CORE_LIB_INCLUDES}
+        ${CMAKE_CURRENT_SOURCE_DIR}
         SYSTEM ${PYTHON_INCLUDE_DIRS}
         SYSTEM ${pybind11_INCLUDE_DIRS}
         SYSTEM ${EXTERNAL_INCLUDES}	
@@ -194,27 +184,18 @@ target_include_directories(${engine_shared_lib} PRIVATE
 set(math_shared_lib math)
 pybind11_add_module(${math_shared_lib} ${src_py_math_files})
 target_link_libraries(${math_shared_lib} PRIVATE 
-		${core_library}
+		${htm_core_lib_path}
 		${COMMON_OS_LIBS}
 		)
 target_compile_options(${math_shared_lib} PUBLIC ${INTERNAL_CXX_FLAGS})
 target_compile_definitions(${math_shared_lib} PRIVATE ${COMMON_COMPILER_DEFINITIONS})
 target_include_directories(${math_shared_lib} PRIVATE 
-	${CORE_LIB_INCLUDES}
-        ${PROJECT_SOURCE_DIR}
+        ${CORE_LIB_INCLUDES}
+        ${CMAKE_CURRENT_SOURCE_DIR}
         SYSTEM ${PYTHON_INCLUDE_DIRS}
         SYSTEM ${pybind11_INCLUDE_DIRS}
         SYSTEM ${EXTERNAL_INCLUDES}	
 	)
-
-install(TARGETS
-        sdr
-        encoders
-        algorithms
-        engine_internal
-        math
-        RUNTIME DESTINATION bin
-        LIBRARY DESTINATION ${distr}/src/htm/bindings
-        ARCHIVE DESTINATION lib)
-	
-
+# Install the extension modules using scikit-build-core's install command
+install(TARGETS ${sdr_shared_lib} ${encoders_shared_lib} ${algorithms_shared_lib} ${engine_shared_lib} ${math_shared_lib}
+        DESTINATION htm/bindings COMPONENT python)

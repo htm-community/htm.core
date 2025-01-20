@@ -1,6 +1,7 @@
 # -----------------------------------------------------------------------------
 # HTM Community Edition of NuPIC
-# Copyright (C) 2016, Numenta, Inc.
+# Copyright (C) 2016, 2024, Numenta, Inc.
+#		Modified by David Keeney, dkeeney@gmail.com Dec 2024
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero Public License version 3 as
@@ -16,90 +17,33 @@
 # -----------------------------------------------------------------------------
 #
 #######################################
-# This bootstrap cmake file is used to start the ThirdParty
-# build with its own cache.  Once built, the main build
-# will not be able to affect these file even if doing a 'make clean'.
-# If you need to re-build the ThirdParty libaries, 
-#  - cd to repository
-#  - delete build  (rm -r build)
-#  - create build/scripts (mkdir -d build/scripts)
-#  - cd build/scripts
-#  - cmake ../..
+# This bootstrap cmake file is used to start the ThirdParty builds.
+# Note: You can override this download (like for air-gap computers) by manually obtaining
+#       the distribution package and manually expanding it in the folders
+#             build/Thirdparty/<dependency_name>
 
 
+include(external/common.cmake)          # Build instructions for the common library
+include(external/cereal.cmake)          # Build instructions for cereal
+include(external/cpp-httplib.cmake)     # Build instructions for cpp-httplib
+include(external/digestpp.cmake)        # Build instructions for digestpp
+include(external/eigen.cmake)           # Build instructions for Eigen
+include(external/gtest.cmake)           # Build instructions for gtest
+include(external/libyaml.cmake)         # Build instructions for libyaml
+include(external/mnist.cmake)           # Build instructions for mnist
+include(external/sqlite3.cmake)         # Build instructions for sqlite3
 
-FILE(MAKE_DIRECTORY  ${REPOSITORY_DIR}/build/ThirdParty)
-execute_process(COMMAND ${CMAKE_COMMAND} 
-            -G ${CMAKE_GENERATOR}
-	    -D CMAKE_INSTALL_PREFIX=. 
-            -D NEEDS_BOOST:BOOL=${NEEDS_BOOST}
-            -D BINDING_BUILD:STRING=${BINDING_BUILD}
-            -D CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-            -D REPOSITORY_DIR=${REPOSITORY_DIR}
-		../../external
-                WORKING_DIRECTORY ${REPOSITORY_DIR}/build/ThirdParty
-                RESULT_VARIABLE result
-#                OUTPUT_QUIET      ### Disable this to debug external configuration
-	)
-if(result)
-    message(FATAL_ERROR "CMake step for Third Party builds failed: ${result}")
-endif()
-if(MSVC)
-  # for MSVC builds we need to build both Release and Debug builds
-  # because this will not be ran again if we switch modes in the IDE.
-  execute_process(COMMAND ${CMAKE_COMMAND} --build . --config Release
-                    WORKING_DIRECTORY ${REPOSITORY_DIR}/build/ThirdParty
-                    RESULT_VARIABLE result
-#                    OUTPUT_QUIET      ### Disable this to debug external buiilds
-        )
-  if(result)
-    message(FATAL_ERROR "build step for MSVC Release Third Party builds failed: ${result}")
-  endif()
-  execute_process(COMMAND ${CMAKE_COMMAND} --build . --config Debug
-                    WORKING_DIRECTORY ${REPOSITORY_DIR}/build/ThirdParty
-                    RESULT_VARIABLE result
-#                    OUTPUT_QUIET      ### Disable this to debug external buiilds
-        )
-  if(result)
-    message(FATAL_ERROR "build step for MSVC Debug Third Party builds failed: ${result}")
-  endif()
-else(MSVC)
-  # for linux and OSx builds
-  execute_process(COMMAND ${CMAKE_COMMAND} --build . --config ${CMAKE_BUILD_TYPE} 
-                    WORKING_DIRECTORY ${REPOSITORY_DIR}/build/ThirdParty
-                    RESULT_VARIABLE result
-#                    OUTPUT_QUIET      ### Disable this to debug external buiilds
-        )
-  if(result)
-    message(FATAL_ERROR "build step for Third Party builds failed: ${result}")
-  endif()
-endif(MSVC)
 
-# extract the external directory paths
-#    The external third party modules are being built
-#    in a seperate build with a different cache.  So variables
-#    being passed back must be passed via a file.
-message(STATUS "Results from external build:")
-set(IMPORT_FILE "${REPOSITORY_DIR}/build/ThirdParty/results.txt")
-FILE(READ "${IMPORT_FILE}" contents)
-STRING(REGEX REPLACE "\n" ";" lines "${contents}")
-FOREACH(line ${lines})
-  STRING(REGEX REPLACE "@@@" ";" line "${line}")
-  LIST(GET line 0 name)
-  LIST(REMOVE_AT line 0)
-  SET(${name} ${line})
-  message(STATUS "  ${name} = ${${name}}")
-ENDFOREACH()
-set(EXTERNAL_INCLUDES
-	${yaml_INCLUDE_DIRS}
-	${Boost_INCLUDE_DIRS}
-	${eigen_INCLUDE_DIRS}
-	${mnist_INCLUDE_DIRS}
-	${cereal_INCLUDE_DIRS}
-	${digestpp_INCLUDE_DIRS}
-	${cpp-httplib_INCLUDE_DIRS}
-	${sqlite3_INCLUDE_DIRS}
-	${common_INCLUDE_DIRS}
-	${REPOSITORY_DIR}/external/common/include
-)
+# Define EXTERNAL_INCLUDES after including bootstrap.cmake
+set(EXTERNAL_INCLUDES "")
+list(APPEND EXTERNAL_INCLUDES "${cereal_INCLUDE_DIR}")
+list(APPEND EXTERNAL_INCLUDES "${eigen_INCLUDE_DIR}")
+list(APPEND EXTERNAL_INCLUDES "${cpp-httplib_INCLUDE_DIR}")
+list(APPEND EXTERNAL_INCLUDES "${digestpp_INCLUDE_DIR}")
+list(APPEND EXTERNAL_INCLUDES "${gtest_INCLUDE_DIR}")
+list(APPEND EXTERNAL_INCLUDES "${libyaml_INCLUDE_DIR}")
+list(APPEND EXTERNAL_INCLUDES "${mnist_INCLUDE_DIR}")
+list(APPEND EXTERNAL_INCLUDES "${sqlite3_INCLUDE_DIR}")
+list(APPEND EXTERNAL_INCLUDES "${common_INCLUDE_DIR}")
+
 

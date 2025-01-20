@@ -87,5 +87,3 @@ class NetworkAPI_Dimensions_Test(unittest.TestCase):
     self.assertEqual(s, SDR(dim.asVector()))
     
     
-if __name__ == "__main__":
-  unittest.main()    

@@ -1,7 +1,8 @@
 # -----------------------------------------------------------------------------
 # Numenta Platform for Intelligent Computing (NuPIC)
-# Copyright (C) 2019, Numenta, Inc.  
+# Copyright (C) 2019, Numenta, Inc.  
 # modified 4/4/2022 - newer version
+# modified 12/12/2024 - use FetchContent, David Keeney dkeeney@gmail.com
 #
 # Unless you have purchased from
 # Numenta, Inc. a separate commercial license for this software code, the
@@ -17,53 +18,86 @@
 # See the GNU Affero Public License for more details.
 #
 # You should have received a copy of the GNU Affero Public License
-# along with this program.  If not, see http://www.gnu.org/licenses.
+# along with this program.  If not, see http://www.gnu.org/licenses.
 #
 # http://numenta.org/licenses/
 # -----------------------------------------------------------------------------
+
 # This downloads and builds the libyaml library.
 #
-# libyaml  - This is a SAX parser which means that it performs callbacks
-#            or returns tokens for each symbol it parses from the yaml text.  
-#            Therefore the interface (Value.cpp) must create the internal structure.
-#            This is a YAML 1.1 implementation.
+
+# libyaml  - This is a SAX parser which means that it performs callbacks
+#            or returns tokens for each symbol it parses from the yaml text.  
+#            Therefore the interface (Value.cpp) must create the internal structure.
+#            This is a YAML 1.1 implementation.
 #
-#            The current release is 0.2.2
-#            The repository is at https://github.com/yaml/libyaml
-#            Documentation is at https://pyyaml.org/wiki/LibYAML
+#            The repository is at https://github.com/yaml/libyaml
+#            Documentation is at https://pyyaml.org/wiki/LibYAML
 #
-#            There is a problem in version 0.2.2; it does not build.
-#            Use the current master.
-#
-if(EXISTS   ${REPOSITORY_DIR}/build/ThirdParty/share/libyaml.zip)
-    set(URL ${REPOSITORY_DIR}/build/ThirdParty/share/libyaml.zip)
-elif(EXISTS ${REPOSITORY_DIR}/build/ThirdParty/share/libyaml.tar.gz)
-    set(URL ${REPOSITORY_DIR}/build/ThirdParty/share/libyaml.tar.gz)
+include(FetchContent)
+set(dependency_url "https://github.com/yaml/libyaml/archive/refs/tags/0.2.5.tar.gz")
+set(local_override "${CMAKE_SOURCE_DIR}/build/Thirdparty/libyaml")
+
+
+
+# Check if local path exists and if so, use it as-is.
+if(EXISTS ${local_override})
+    message(STATUS "  Obtaining libyaml from local override: ${local_override}")
+    FetchContent_Populate(
+        libyaml
+        SOURCE_DIR ${local_override}
+		QUIET
+    )
 else()
-    set(URL "https://github.com/yaml/libyaml/archive/refs/tags/0.2.5.tar.gz")
+    message(STATUS "  Obtaining libyaml from: ${dependency_url}")
+    FetchContent_Populate(
+        libyaml
+        URL ${dependency_url}
+		QUIET
+    )
 endif()
 
-message(STATUS "Obtaining libyaml")
-include(DownloadProject/DownloadProject.cmake)
-download_project(PROJ libyaml
-	PREFIX ${EP_BASE}/libyaml
-	URL ${URL}
-	GIT_SHALLOW ON
-	UPDATE_DISCONNECTED 1
-	QUIET
-	)
-    
-set(YAML_DECLARE_STATIC ON)
-set(YAML_STATIC_LIB_NAME "yaml" CACHE STRING "The core library name." )
-add_subdirectory(${libyaml_SOURCE_DIR} ${libyaml_BINARY_DIR})
+# Create config.h with the appropriate definitions
+set(config_h "${libyaml_BINARY_DIR}/include/config.h")
+file(MAKE_DIRECTORY "${libyaml_BINARY_DIR}/include") # Ensure directory exists
 
-set(yaml_INCLUDE_DIRS ${libyaml_SOURCE_DIR}/include) 
-if (MSVC)
-  set(yaml_LIBRARIES   "${libyaml_BINARY_DIR}$<$<CONFIG:Release>:/Release/yaml.lib>$<$<CONFIG:Debug>:/Debug/yaml.lib>") 
+file(WRITE  "${config_h}" "#ifndef YAML_CONFIG_H_INCLUDED\n")
+file(APPEND "${config_h}" "  #define YAML_CONFIG_H_INCLUDED\n\n")
+file(APPEND "${config_h}" "  #define YAML_VERSION_MAJOR 0\n")
+file(APPEND "${config_h}" "  #define YAML_VERSION_MINOR 2\n")
+file(APPEND "${config_h}" "  #define YAML_VERSION_PATCH 5\n")
+file(APPEND "${config_h}" "  #define YAML_VERSION_STRING \"0.2.5\"\n\n")
+file(APPEND "${config_h}" "#endif /* YAML_CONFIG_H_INCLUDED */\n")
+
+
+# Create a custom object library target for libyaml
+add_library(yaml_obj OBJECT)
+target_sources(yaml_obj
+    PRIVATE
+        "${libyaml_SOURCE_DIR}/src/api.c"
+        "${libyaml_SOURCE_DIR}/src/dumper.c"
+        "${libyaml_SOURCE_DIR}/src/emitter.c"
+        "${libyaml_SOURCE_DIR}/src/loader.c"
+        "${libyaml_SOURCE_DIR}/src/parser.c"
+        "${libyaml_SOURCE_DIR}/src/reader.c"
+        "${libyaml_SOURCE_DIR}/src/scanner.c"
+        "${libyaml_SOURCE_DIR}/src/writer.c"
+)
+
+
+target_compile_definitions(yaml_obj PRIVATE YAML_DECLARE_STATIC HAVE_CONFIG_H)
+# shared libraries need PIC
+if(MSVC)
+  target_compile_options( yaml_obj PUBLIC ${INTERNAL_CXX_FLAGS}  /wd4267 /wd4244)
+  set_property(TARGET yaml_obj PROPERTY LINK_LIBRARIES ${INTERNAL_LINKER_FLAGS})
 else()
-  set(yaml_LIBRARIES   ${libyaml_BINARY_DIR}/${CMAKE_STATIC_LIBRARY_PREFIX}yaml${CMAKE_STATIC_LIBRARY_SUFFIX}) 
+  target_compile_options( yaml_obj PUBLIC ${INTERNAL_CXX_FLAGS} -Wno-conversion -Wno-sign-conversion)
 endif()
-FILE(APPEND "${EXPORT_FILE_NAME}" "yaml_INCLUDE_DIRS@@@${yaml_INCLUDE_DIRS}\n")
-FILE(APPEND "${EXPORT_FILE_NAME}" "yaml_LIBRARIES@@@${yaml_LIBRARIES}\n")
-FILE(APPEND "${EXPORT_FILE_NAME}" "yaml_DEFINE@@@YAML_PARSER_libYaml\n")
+set_target_properties(yaml_obj PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_compile_definitions(yaml_obj PRIVATE  ${COMMON_COMPILER_DEFINITIONS})
+target_include_directories(yaml_obj PUBLIC  "${libyaml_SOURCE_DIR}/include")
+target_include_directories(yaml_obj PRIVATE "${libyaml_BINARY_DIR}/include")
 
+# Set variables for other parts of your CMake project to use
+set(libyaml_INCLUDE_DIR "${libyaml_SOURCE_DIR}/include")
+set(libyaml_TARGET yaml_obj) # Use the object library target
