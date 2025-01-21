@@ -444,7 +444,7 @@ class IntersectionTest(unittest.TestCase):
                 seed += 1
                 sdrs.append( inp )
             X.intersection( sdrs )
-            mean_sparsity = np.product( sparsities )
+            mean_sparsity = np.prod( sparsities )
             assert( X.getSparsity() >= (2./3.) * mean_sparsity )
             assert( X.getSparsity() <= (4./3.) * mean_sparsity )
 
@@ -499,7 +499,7 @@ class UnionTest(unittest.TestCase):
                 seed += 1
                 sdrs.append( inp )
             X.union( sdrs )
-            mean_sparsity = np.product(list( 1 - s for s in sparsities ))
+            mean_sparsity = np.prod(list( 1 - s for s in sparsities ))
             assert( X.getSparsity() >= (2./3.) * (1 - mean_sparsity) )
             assert( X.getSparsity() <= (4./3.) * (1 - mean_sparsity) )
 

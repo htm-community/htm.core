@@ -30,10 +30,13 @@ import subprocess
 import sys
 
 # Run the C++ unit tests 
+print("    ====  C++ unit tests ===== ")
 subprocess.run(['build/Release/bin/unit_tests'], check=True)  
 
 # Run all Python unit tests
-subprocess.run([sys.executable, "-m", "pytest", "-s", "py/tests"], check=True)
+print("")
+print("    ===== Python unit tests =====")
+subprocess.run([sys.executable, "-m", "pytest", "-s", "py/tests", "bindings/py/tests"], check=True)
 
 print('Unit tests completed.')
 

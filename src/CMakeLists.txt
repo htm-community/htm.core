@@ -393,7 +393,9 @@ target_include_directories(${src_executable_napi_hello_database} PRIVATE
 #
 set(src_executable_mnistsp mnist_sp)
 add_executable(${src_executable_mnistsp} examples/mnist/MNIST_SP.cpp)
-target_compile_options(${src_executable_mnistsp} PRIVATE /wd4244)
+if(MSVC)
+  target_compile_options(${src_executable_mnistsp} PRIVATE /wd4244)
+endif()
 target_link_libraries(${src_executable_mnistsp} 
         ${INTERNAL_LINKER_FLAGS}
         ${core_library}

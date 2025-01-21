@@ -48,8 +48,10 @@ def main():
     #print(f"math_module_path = {math_module_path}")
     #if not any(os.path.exists(f) for f in glob.glob(math_module_path)):
     
-    htm_core_lib_path = os.path.join("build", "Release", "lib", "htm_core.*")
-    if not any(os.path.exists(f)  for f in glob.glob(htm_core_lib_path)):
+    htm_core_lib_path = os.path.join("build", "Release", "lib")
+    if not (os.path.exists(os.path.join(htm_core_lib_path, "htm_core.lib")) or
+            os.path.exists(os.path.join(htm_core_lib_path, "libhtm_core.a"))) :
+
         # Build the C++ components with CMake
         print("Building C++ components...")
         #shutil.rmtree("build/cmake", ignore_errors=True)  # Clear cache, Ignore errors if the directory doesn't exist
@@ -117,7 +119,7 @@ def main():
         
     # Install the package in Python.
     print("Installing the wheel...")
-    cmake_command = [sys.executable, '-m', 'pip', 'install', wheel_file]
+    cmake_command = [sys.executable, '-m', 'pip', 'install', '--force-reinstall', wheel_file]
     print("CMake command:", cmake_command)
     subprocess.run(cmake_command, check=True)
     

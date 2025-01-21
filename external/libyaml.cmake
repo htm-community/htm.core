@@ -91,7 +91,11 @@ if(MSVC)
   target_compile_options( yaml_obj PUBLIC ${INTERNAL_CXX_FLAGS}  /wd4267 /wd4244)
   set_property(TARGET yaml_obj PROPERTY LINK_LIBRARIES ${INTERNAL_LINKER_FLAGS})
 else()
-  target_compile_options( yaml_obj PUBLIC ${INTERNAL_CXX_FLAGS} -Wno-conversion -Wno-sign-conversion)
+  target_compile_options( yaml_obj PUBLIC  -Wunused-value
+		-Wno-conversion -Wno-sign-conversion -Wno-unused-value
+		-fdiagnostics-show-option -fPIC -Wextra -Wreturn-type 
+                -Wunused -Wno-unused-variable -Wno-unused-parameter  
+		-Wno-missing-field-initializers  -Wall -pipe -O3 -mtune=generic)
 endif()
 set_target_properties(yaml_obj PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_compile_definitions(yaml_obj PRIVATE  ${COMMON_COMPILER_DEFINITIONS})

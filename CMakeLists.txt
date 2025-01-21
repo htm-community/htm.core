@@ -18,7 +18,7 @@
 
 cmake_minimum_required(VERSION 3.21)
 
-project(htm LANGUAGES  CXX)
+project(htm LANGUAGES C CXX)
 
 
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}")

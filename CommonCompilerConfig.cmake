@@ -326,12 +326,13 @@ else()
         if(NOT ${CMAKE_SYSTEM_PROCESSOR} STREQUAL "armv7l")
                 set(optimization_flags_cc ${optimization_flags_cc} -mtune=generic)
         endif()
-        if(${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU" AND NOT MINGW)
-                # NOTE -flto must go together in both cc and ld flags; also, it's presently incompatible
-                # with the -g option in at least some GNU compilers (saw in `man gcc` on Ubuntu)
-                set(optimization_flags_cc ${optimization_flags_cc} -fuse-linker-plugin -flto-report -flto -fno-fat-lto-objects) #TODO fix LTO for clang
-                set(optimization_flags_lt ${optimization_flags_lt} -flto -fno-fat-lto-objects) #TODO LTO for clang too
-        endif()
+	# Disable lto because it was taking too much RAM  (1/21/2025, dkeeney)
+        #if(${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU" AND NOT MINGW)
+        #        # NOTE -flto must go together in both cc and ld flags; also, it's presently incompatible
+        #        # with the -g option in at least some GNU compilers (saw in `man gcc` on Ubuntu)
+        #        set(optimization_flags_cc ${optimization_flags_cc} -fuse-linker-plugin -flto-report -flto -fno-fat-lto-objects) #TODO fix LTO for clang
+        #        set(optimization_flags_lt ${optimization_flags_lt} -flto -fno-fat-lto-objects) #TODO LTO for clang too
+        #endif()
 
 
 	#

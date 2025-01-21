@@ -1,3 +1,0 @@
-
-Dump of file build\Release\lib\htm_core.lib
-LINK : fatal error LNK1181: cannot open input file 'build\Release\lib\htm_core.lib'
