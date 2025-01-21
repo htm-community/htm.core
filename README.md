@@ -97,11 +97,12 @@ git clone https://github.com/htm-community/htm.core
 		  
 2) At a command prompt, `cd` to the root directory of this repository.
 
-3) Run: `python setup.py install --user --force`
+3) Run: `pip install . --user --force`
 
    This will build and install a release version of htm.core.  The `--user` option prevents the system installed site-packages folder from being changed and avoids the need for admin privileges.  The `--force` option forces the package to be replaced if it already exists from a previous build. Alternatively you can type `pip uninstall htm.core` to remove a previous package before performing a build.
    
    * If you are using `virtualenv` you may not need the --user or --force options.
+   * If you are using a uv virtual environment then you only need to run: `uv pip install .`
    * If you are using Anaconda Python you must run within the `Anaconda Prompt` on Windows. Do not use --user or --force options.
 
    * If you run into problems due to caching of arguments in CMake, delete the
@@ -439,8 +440,10 @@ You should run tests locally, and tests are also run as a part of the CI.
 There are two sets (somewhat duplicit) tests for c++ and python.
 
  * C++ Unit tests -- to run: `./build/Release/bin/unit_tests`
- * Python Unit tests -- to run: `python setup.py test` (runs also the C++ tests above)
-   - `py/tests/`
+ * Python Unit tests -- to run
+    1. Run `pytest ./py`
+    2. Run `pytest ./bindings`
+   
    - `bindings/py/tests/`
 
 

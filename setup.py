@@ -24,7 +24,6 @@ import sys
 import json
 
 from setuptools import Command, find_packages, setup
-from setuptools.command.test import test as BaseTestCommand
 # see https://stackoverflow.com/questions/44323474/distutils-core-vs-setuptools-with-c-extension
 from setuptools import Extension
 from pathlib import Path
@@ -146,52 +145,6 @@ def findRequirements(platform, fileName="requirements.txt"):
   ]
 
 
-
-class TestCommand(BaseTestCommand):
-  user_options = [("pytest-args=", "a", "Arguments to pass to py.test")]
-
-
-  def initialize_options(self):
-    BaseTestCommand.initialize_options(self)
-    self.pytest_args = [] # pylint: disable=W0201
-
-
-  def finalize_options(self):
-    BaseTestCommand.finalize_options(self)
-    self.test_args = []
-    self.test_suite = True
-
-
-  def run_tests(self):
-    import pytest
-    cwd = os.getcwd()
-    errno = 0
-    os.chdir(REPO_DIR)
-    # run c++ tests (from python)
-    cpp_tests = os.path.join(REPO_DIR, "build", "Release", "bin", "unit_tests")
-    subprocess.check_call([cpp_tests])
-    os.chdir(cwd)
-    
-
-    # run python bindings tests (in /bindings/py/tests/)
-    try:
-      os.chdir(os.path.join(REPO_DIR, "bindings", "py","tests"))
-      errno = pytest.main(self.pytest_args)
-    finally:
-      os.chdir(cwd)
-    if errno != 0:
-      sys.exit(errno)
-    
-    # python tests (in /py/tests/)
-    try:
-      os.chdir(os.path.join(REPO_DIR, "py", "tests"))
-      errno = pytest.main(self.pytest_args)
-    finally:
-      os.chdir(cwd)
-    sys.exit(errno)
-
-
-
 def getPlatformInfo():
   """Identify platform."""
   if "linux" in sys.platform:
@@ -204,7 +157,6 @@ def getPlatformInfo():
   else:
     raise Exception("Platform '%s' is unsupported!" % sys.platform)
   return platform
-
 
 
 def getExtensionFileNames(platform, build_type):
@@ -451,7 +403,6 @@ if __name__ == "__main__":
     zip_safe=False,
     cmdclass={
       "clean": CleanCommand,
-      "test": TestCommand,
       "configure": ConfigureCommand,
     },
     author="Numenta & HTM Community",
