@@ -40,6 +40,7 @@ junit-test-results.xml
 # Test Output files
 bindings/py/tests/*.stream
 TestOutputDir/*
+RDSE_testPickle
 
 # /
 /.gdb_history

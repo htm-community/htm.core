@@ -23,9 +23,15 @@ import glob
 import shutil
 import sys
 import contextlib
-import tomllib
+import re
 
 def main():
+    # Check Python version
+    if sys.version_info < (3, 9):
+        print("Error: This project requires Python 3.9 or later.")
+        print("You are running Python {}.{}.".format(sys.version_info.major, sys.version_info.minor))
+        sys.exit(1)
+        
     # Check if running in a virtual environment
     if not is_running_in_docker() and not in_venv():
       print("Error: Not running in a python virtual environment.")
@@ -36,45 +42,50 @@ def main():
       print("  .venv\\Scripts\\activate  (Windows)")
       print("  source .venv/bin/activate (Linux/macOS)")
       sys.exit(1)
-      
-        
+
+            
     # Install build dependencies
     print("Installing build dependencies...")
-    subprocess.run([sys.executable, '-m', 'pip', 'install', '--upgrade', 'pip', 'build', 'setuptools', 'wheel', 'pybind11', 'pytest', 'requests'], check=True)     
-    
-    
-    # Check if the math extension module exists.  If it does then the rest of them probably exist.
-    #math_module_path = os.path.join("build", "htm", "bindings", "math.*")  # Use wildcard for platform independence
-    #print(f"math_module_path = {math_module_path}")
-    #if not any(os.path.exists(f) for f in glob.glob(math_module_path)):
-    
+    subprocess.run([sys.executable, '-m', 'pip', 'install', 
+              '--upgrade', 'pip', 
+              'build', 
+              'setuptools', 
+              'wheel', 
+              'pybind11', 
+              'packaging',
+              'pytest', 
+              'requests'], check=True)     
+              
+    # Get the project version and minimum Cmake version from pyproject.toml
+    # Install toml if needed (for Python < 3.11)
+    if sys.version_info < (3, 11):
+        subprocess.run([sys.executable, '-m', 'pip', 'install', 'toml'], check=True)
+        import toml
+    else:
+        import tomllib as toml
+    with open("pyproject.toml", "rb") as f:
+        pyproject = toml.load(f)
+        
+    project_version = pyproject["project"]["version"]
+    print(f"Version: {project_version}")
+        
+    # Ensure CMake is installed and meets the minimum version requirement
+    import re
+    min_cmake_version = get_cmake_minimum_version()
+    if not check_cmake_version(min_cmake_version):
+        print(f"Installing CMake >={min_cmake_version} using pip...")
+        subprocess.run([sys.executable, '-m', 'pip', 'install', f'cmake>={min_cmake_version}'], check=True)
+         
+    # if the htm_core library does not exist, go build it.   
     htm_core_lib_path = os.path.join("build", "Release", "lib")
     if not (os.path.exists(os.path.join(htm_core_lib_path, "htm_core.lib")) or
             os.path.exists(os.path.join(htm_core_lib_path, "libhtm_core.a"))) :
 
         # Build the C++ components with CMake
         print("Building C++ components...")
-        #shutil.rmtree("build/cmake", ignore_errors=True)  # Clear cache, Ignore errors if the directory doesn't exist
-
-        # Get the pybind11 installation directory using pip
-        result = subprocess.run([sys.executable, "-m", "pip", "show", "pybind11"], capture_output=True, text=True, check=True)
-        # Split the output into lines and find the line containing "Location:"
-        for line in result.stdout.splitlines():
-            if "Location:" in line:
-                # Find the index of the first colon
-                colon_index = line.index(":")  
-                # Extract the path after the first colon
-                pybind11_location = line[colon_index + 1:].strip()
-                break
-        else:
-            raise RuntimeError("Could not find pybind11 location")
-        pybind11_dir = os.path.join(pybind11_location, "pybind11", "share", "cmake", "pybind11")
+        shutil.rmtree("build/cmake", ignore_errors=True)  # Clear cache, Ignore errors if the directory doesn't exist
+        shutil.rmtree("dist", ignore_errors=True)         # Clear wheels, Ignore errors if the directory doesn't exist
         
-        # Read the version from pyproject.toml
-        with open("pyproject.toml", "rb") as f:
-            pyproject = tomllib.load(f)
-        project_version = pyproject["project"]["version"]
-        print(f"Version: {project_version}")
 
         # Build the C++ htm_core library
         cmake_command = [
@@ -98,18 +109,28 @@ def main():
         print("CMake command:", cmake_command)
         subprocess.run(cmake_command, check=True)
         print("C++ component build completed")
+        print("")
         
     else:
         print("C++ components already built. Skipping C++ build...")
 
-    # Build the Python package with scikit-build-core
-    print("Building Python package...")
+    wheel_file = find_wheel_file(project_version)
+    if wheel_file == None:
+        # Build the Python package with scikit-build-core
+        print("Building Python package...")
     
-    cmake_command = [sys.executable, "-m", "build"]
-    print("CMake command:", cmake_command)
-    subprocess.run(cmake_command, check=True)
-    wheel_files = [f for f in os.listdir('dist') if f.startswith('htm-') and f.endswith('.whl')]
-    wheel_file = os.path.join('dist', wheel_files[0])  # Use the first found wheel file
+        cmake_command = [sys.executable, "-m", "build"]
+        print("CMake command:", cmake_command)
+        subprocess.run(cmake_command, check=True)
+        print("")
+    else:
+        print("Wheel already exists, skipping build of extensions...")
+    
+    # locate the .whl file we just created
+    wheel_file = find_wheel_file(project_version)
+    if wheel_file is None:
+        print(f"Error: Could not find the wheel we just created in the 'dist' directory.")
+        sys.exit(1)
        
     # Unpack the wheel (for testing)
     """
@@ -123,33 +144,8 @@ def main():
     print("CMake command:", cmake_command)
     subprocess.run(cmake_command, check=True)
     
-    # Determine the unpacked directory name
-    """
-    unpacked_dir = os.path.splitext(os.path.basename(wheel_file))[0]
-    unpacked_dir = '-'.join(unpacked_dir.split('-', 2)[:2])  # Split at the second hyphen
-    print("unpacked_dir = ", unpacked_dir)
-
-    # Clean up unpacked directory ... 
-    try:
-        #shutil.rmtree(unpacked_dir)  # keep this for debugging the build. But do not check-in with this directory.
-        print("")
-    except OSError as e:
-        print(f"Error: Failed to remove unpacked directory '{unpacked_dir}': {e}")
-    """
     print('Installation complete!')
     
-@contextlib.contextmanager
-def pushd(new_dir):
-    """
-    Context manager for temporarily changing the current working directory.
-    """
-    previous_dir = os.getcwd()
-    os.chdir(new_dir)
-    try:
-        yield
-    finally:
-        os.chdir(previous_dir)    
-        
 
     
 def in_venv() -> bool:
@@ -168,6 +164,57 @@ def is_running_in_docker():
     except FileNotFoundError:
         return False  # Not Linux, so probably not Docker    
         
+def get_cmake_minimum_version(cmake_file="CMakeLists.txt"):
+    """Extracts the minimum required CMake version from a CMakeLists.txt file."""
+    with open(cmake_file, "r") as f:
+        for line in f:
+            match = re.search(r"cmake_minimum_required\(VERSION\s*(\s*[\d.]+)", line)
+            if match:
+                return match.group(1)
+    return None 
+        
+def check_cmake_version(min_version):
+    """Checks the CMake version and returns True if it meets the minimum requirement."""
+    from packaging import version
+    try:
+        result = subprocess.run(
+            ["cmake", "--version"], capture_output=True, text=True, check=True
+        )
+        version_output = result.stdout
+        version_str = version_output.splitlines()[0].split()[-1]
+        
+        # Parse the version string using packaging.version.Version
+        installed_version = version.parse(version_str)
+        required_version = version.parse(min_version)
+
+        if installed_version >= required_version:
+            print(f"Found CMake version {version_str}, which is sufficient.")
+            return True
+        else:
+            print(f"CMake version {version_str} is too old. Requires {min_version}.")
+            return False
+    except FileNotFoundError:
+        return False
+    except subprocess.CalledProcessError as e:
+        print(f"Error: CMake version check failed: {e}")
+        sys.exit(1)
+    except ValueError:
+        print(f"Error: Could not parse CMake version: {version_str}")
+        sys.exit(1)
+        
+def find_wheel_file(project_version):
+    """Locates the wheel file in dist with matching Python and project versions."""
+    wheel_file = None
+    if os.path.exists('dist'):
+        wheel_files = [f for f in os.listdir('dist') if f.startswith('htm-') and f.endswith('.whl')]
+        pyver = f"cp{sys.version_info.major}{sys.version_info.minor}"
+        pjver = f"htm-{project_version}"
+        for whl in wheel_files:
+            if pyver in whl and pjver in whl:
+                wheel_file = os.path.join('dist', whl)
+                break
+    return wheel_file
+
 
 
 if __name__ == "__main__":
