@@ -154,7 +154,7 @@ TEST(ClassifierRegionTest, asRealDecoder) {
   size_t EPOCH = 20000;  // the bigger the number the higher the resolutioin...but takes longer.
   Random rnd(42);
 
-  VERBOSE << "With RDSE encoder, Leaning with random numbers between -1.0 and +1.0 with radius of 0.1" << std::endl;
+  VERBOSE << "With RDSE encoder, Learning with random numbers between -1.0 and +1.0 with radius of 0.1" << std::endl;
   for (size_t i = 0; i < EPOCH; i++) {
     // learn values between -1.0 and 1.0, with a bucket size of 0.1  (100 buckets)
     // Note, to use a smaller bucket or higher probability, there needs to be a lot more iterations.
