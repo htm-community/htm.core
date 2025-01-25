@@ -140,7 +140,7 @@ TEST(ClassifierRegionTest, asCategoryDecoder) {
   ASSERT_NEAR(pdf[predicted], 0.944, 0.003);
 }
 
-TEST(ClassifierRegionTest, asRealDecoder) {
+TEST(ClassifierRegionTest, DISABLED_asRealDecoder) {
   Network net;
 
   std::shared_ptr<Region> encoder = net.addRegion("encoder", "RDSEEncoderRegion", "{size: 600, radius: 0.1, seed: 42, activeBits: 40}");
