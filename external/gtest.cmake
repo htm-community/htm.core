@@ -2,6 +2,7 @@
 # HTM Community Edition of NuPIC
 # Copyright (C) 2021, Numenta, Inc.
 # modified 4/4/2022 - newer version
+# modified 12/12/2024 - use FetchContent, David Keeney dkeeney@gmail.com
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero Public License version 3 as
@@ -13,56 +14,41 @@
 # See the GNU Affero Public License for more details.
 #
 # You should have received a copy of the GNU Affero Public License
-# along with this program.  If not, see http://www.gnu.org/licenses.
+# along with this program.  If not, see http://www.gnu.org/licenses.
 # -----------------------------------------------------------------------------
 #
-# This will load the gtest module.
+# This will download the gtest module.
 # exports 'gtest' as a target
 #
+include(FetchContent)
+#
 
+set(dependency_url "https://github.com/google/googletest/releases/download/v1.15.2/googletest-1.15.2.tar.gz")
+set(local_override "${CMAKE_SOURCE_DIR}/build/Thirdparty/gtest")
 
-# Prior to gtest 1.8.1, gtest required 'std::tr1::tuple' which does not exist in MSVC 2015,2017
-# The latest version of gtest fixes the problem as follows, so we need at least gtest 1.8.1.
-# Summary of tuple support for Microsoft Visual Studio:
-# Compiler    version(MS)  version(cmake)  Support
-# ----------  -----------  --------------  -----------------------------
-# <= VS 2010  <= 10        <= 1.6.0.0         Use Google Tests's own tuple.
-# VS 2012     11           1.7.0.0            std::tr1::tuple + _VARIADIC_MAX=10
-# VS 2013     12           1.8.0.0            std::tr1::tuple
-# VS 2015     14           1.9.0.0            std::tuple
-# VS 2017     15           >= 1.9.1.0         std::tuple
-
-if(EXISTS "${REPOSITORY_DIR}/build/ThirdParty/share/googletest.tar.gz")
-    set(URL "${REPOSITORY_DIR}/build/ThirdParty/share/googletest.tar.gz")
+# Check if local path exists and if so, use it as-is.
+if(EXISTS ${local_override})
+    message(STATUS "  Obtaining gtest from local override: ${local_override}")
+    FetchContent_Declare(
+        gtest
+        SOURCE_DIR ${local_override}
+        EXCLUDE_FROM_ALL
+        QUIET
+    )
 else()
-    set(URL https://github.com/google/googletest/archive/refs/tags/release-1.12.1.tar.gz)
+    message(STATUS "  Obtaining gtest from: ${dependency_url}")
+    FetchContent_Declare(
+        gtest
+        URL ${dependency_url}
+		EXCLUDE_FROM_ALL
+		QUIET
+    )
 endif()
 
-#
-# Build gtest lib
-#
-message(STATUS "Obtaining gtest")
-include(DownloadProject/DownloadProject.cmake)
-download_project(PROJ googletest
-	PREFIX ${EP_BASE}/gtest
-	URL ${URL}
-	UPDATE_DISCONNECTED 1
-	QUIET
-	)
-set(INSTALL_GTEST OFF CACHE BOOL "prevents installing gtest" FORCE)
-set(BUILD_GMOCK   OFF CACHE BOOL "prevents building gmock"   FORCE)
-#set(gtest_force_shared_crt ON CACHE BOOL "Prevent GoogleTest from overriding our compiler/linker options" FORCE)
-add_subdirectory(${googletest_SOURCE_DIR} ${googletest_BINARY_DIR})
+# For Windows: Prevent overriding the parent project's compiler/linker settings.
+# This will force generation of a shared library for gtest.
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 
-if(MSVC)
-  set(gtest_LIBRARIES ${REPOSITORY_DIR}/build/ThirdParty/lib/$<$<CONFIG:Release>:Release>$<$<CONFIG:Debug>:Debug>/${CMAKE_STATIC_LIBRARY_PREFIX}gtest${CMAKE_STATIC_LIBRARY_SUFFIX})
-else()
-  if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
-    set(DEBUG_POSTFIX d)
-  endif()
-  set(gtest_LIBRARIES ${REPOSITORY_DIR}/build/ThirdParty/lib/${CMAKE_STATIC_LIBRARY_PREFIX}gtest${CMAKE_STATIC_LIBRARY_SUFFIX})
-endif()
-FILE(APPEND "${EXPORT_FILE_NAME}" "gtest_INCLUDE_DIRS@@@${googletest_SOURCE_DIR}/googletest/include\n")
-FILE(APPEND "${EXPORT_FILE_NAME}" "gtest_LIBRARIES@@@${gtest_LIBRARIES}\n")
+FetchContent_MakeAvailable(gtest)
 
-
+set(gtest_INCLUDE_DIR "${gtest_SOURCE_DIR}/googletest/include")

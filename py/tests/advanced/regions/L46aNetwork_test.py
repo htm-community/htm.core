@@ -120,6 +120,3 @@ class TestSimpleSPTMNetwork(unittest.TestCase):
         self.assertTrue(np.array_equal(s1, s2))
         
 
-if __name__ == "__main__":
-    #import sys;sys.argv = ['', 'Test.testName']
-    unittest.main()

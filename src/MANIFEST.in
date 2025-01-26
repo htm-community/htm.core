@@ -1,2 +1,0 @@
-recursive-include nupic/bindings *.hpp *.cpp *.i
-

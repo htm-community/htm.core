@@ -42,8 +42,6 @@ using namespace htm;
 //////////////////////////////////////////////////////////////
 // Parser interface.
 // Place code to interface with a yaml parser here.
-// Note: #define YAML_PARSERxxxx is set by the 'external' module that loaded the parser.
-//           Only one parser is loaded.  See external/CMakeLists.txt
 
 // Within the parse() function the interface should parse the yaml_string and then
 // populate the resulting tree under the Value root (the 'this' object).
@@ -52,7 +50,6 @@ using namespace htm;
 //
 // As a result of the parse, the root Value node may be a Scalar, Sequence, or a Map.
 
-#ifdef YAML_PARSER_libYaml
 // All interface for the libYaml parser must be encapulated in this section.
 // Documentation:
 //   https://pyyaml.org/wiki/LibYAML
@@ -200,7 +197,6 @@ Value &Value::parse(const std::string &yaml_string) {
   return *this;
 }
 
-#endif // YAML_PARSER_yamlcpp
 /////////////////////////////////////////////////////////////////////////////////////////
 
 

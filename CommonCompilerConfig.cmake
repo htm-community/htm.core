@@ -95,17 +95,14 @@ string(TOLOWER ${PLATFORM} PLATFORM)
 
 set(extra_lib_for_filesystem)   # sometimes -libc++experimental or -lstdc++fs
 set(CMAKE_CXX_STANDARD 11) # -std=c++11 by default
-set(boost_required ON)
 
 if(NOT FORCE_CPP11)
   if(${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU")
     if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "9")
       set(CMAKE_CXX_STANDARD 17)
-      set(boost_required OFF)
     elseif(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "8")
       set(CMAKE_CXX_STANDARD 17)
       set(extra_lib_for_filesystem "stdc++fs")
-      set(boost_required OFF)
     endif()	 
   elseif(${CMAKE_CXX_COMPILER_ID} MATCHES "AppleClang")  # see CMake Policy CMP0025
       ## TODO XCode11 on macOS 10.15 supports c++17 and <filesystem>,
@@ -114,20 +111,12 @@ if(NOT FORCE_CPP11)
       # macOS 10.15 will be release in Sept 2019, so we can switch to it soon after it.
     if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "11")
       set(CMAKE_CXX_STANDARD 17)
-	    set(boost_required OFF)
     endif()
   elseif(MSVC)
     if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "19.14")
       set(CMAKE_CXX_STANDARD 17)
-      set(boost_required OFF)
     endif()
   endif()
-endif()
-if (boost_required)
-  set(NEEDS_BOOST ON)
-else()
-  # otherwise honors the override from parent.
-  set(NEEDS_BOOST ${FORCE_BOOST})
 endif()
 
 set_property(GLOBAL PROPERTY CXX_STANDARD_REQUIRED ON)
@@ -161,7 +150,7 @@ if(MSVC)
 	#	Common Stuff:  /permissive- /W3 /Gy /Gm- /O2 /Oi /EHsc /FC /nologo /Zc:__cplusplus
 	#      Release Only:    /O2 /Oi /Gy  /MD
 	#      Debug Only:       /Od /Zi /sdl /RTC1 /MDd
-	set(INTERNAL_CXX_FLAGS /permissive- /W3 /Gm- /EHsc /FC /nologo /Zc:__cplusplus
+	set(INTERNAL_CXX_FLAGS /permissive- /W3 /Gm- /EHsc /FC /nologo /Zc:__cplusplus 
 							$<$<CONFIG:Release>:/O2 /Oi /Gy  /GL /MD> 
 							$<$<CONFIG:Debug>:/Ob0 /Od /Zi /sdl /WX /RTC1 /MDd>)
 	#linker flags
@@ -170,7 +159,7 @@ if(MSVC)
 	else()
 		set(machine "-MACHINE:X${BITNESS}")
 	endif()
-	set(INTERNAL_LINKER_FLAGS ${machine} -NOLOGO -NODEFAULTLIB:LIBCMT -ignore:4099 $<$<CONFIG:Release>:-LTCG>)
+	set(INTERNAL_LINKER_FLAGS ${machine} -NOLOGO -NODEFAULTLIB:LIBCMT -ignore:4099 -INCREMENTAL:NO $<$<CONFIG:Release>:-LTCG>)
 
 	set(COMMON_COMPILER_DEFINITIONS 	
 		_CONSOLE
@@ -182,10 +171,6 @@ if(MSVC)
 		_SCL_SECURE_NO_WARNINGS
 		_CRT_NONSTDC_NO_DEPRECATE
 		_SCL_SECURE_NO_DEPRECATE
-		BOOST_CONFIG_SUPPRESS_OUTDATED_MESSAGE
-		BOOST_ALL_NO_LIB
-		BOOST_MATH_NO_LONG_DOUBLE_MATH_FUNCTIONS
-		BOOST_NO_WREGEX
 		_SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING
 		_SILENCE_CXX17_RESULT_OF_DEPRECATION_WARNING
 		VC_EXTRALEAN
@@ -217,8 +202,6 @@ else()
 		-DNTA_OS_${platform_uppercase}
 		-DNTA_ARCH_${BITNESS}
 		-DHAVE_CONFIG_H
-		-DBOOST_MATH_NO_LONG_DOUBLE_MATH_FUNCTIONS
-		-DBOOST_NO_WREGEX
 		)
 
 	if(NOT "${CMAKE_BUILD_TYPE}" STREQUAL "Release")
@@ -343,12 +326,13 @@ else()
         if(NOT ${CMAKE_SYSTEM_PROCESSOR} STREQUAL "armv7l")
                 set(optimization_flags_cc ${optimization_flags_cc} -mtune=generic)
         endif()
-        if(${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU" AND NOT MINGW)
-                # NOTE -flto must go together in both cc and ld flags; also, it's presently incompatible
-                # with the -g option in at least some GNU compilers (saw in `man gcc` on Ubuntu)
-                set(optimization_flags_cc ${optimization_flags_cc} -fuse-linker-plugin -flto-report -flto -fno-fat-lto-objects) #TODO fix LTO for clang
-                set(optimization_flags_lt ${optimization_flags_lt} -flto -fno-fat-lto-objects) #TODO LTO for clang too
-        endif()
+	# Disable lto because it was taking too much RAM  (1/21/2025, dkeeney)
+        #if(${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU" AND NOT MINGW)
+        #        # NOTE -flto must go together in both cc and ld flags; also, it's presently incompatible
+        #        # with the -g option in at least some GNU compilers (saw in `man gcc` on Ubuntu)
+        #        set(optimization_flags_cc ${optimization_flags_cc} -fuse-linker-plugin -flto-report -flto -fno-fat-lto-objects) #TODO fix LTO for clang
+        #        set(optimization_flags_lt ${optimization_flags_lt} -flto -fno-fat-lto-objects) #TODO LTO for clang too
+        #endif()
 
 
 	#

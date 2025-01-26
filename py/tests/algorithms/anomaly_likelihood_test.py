@@ -146,4 +146,3 @@ class ArtificialAnomalyTest(TestCaseBase):
         self.assertTrue(max(anom) > threshold)
 
 
-if __name__ == "__main__": main()

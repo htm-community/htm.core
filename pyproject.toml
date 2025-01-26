@@ -1,0 +1,104 @@
+# ----------------------------------------------------------------------
+# HTM Community Edition of NuPIC
+# Copyright (C) 2013-2024, Numenta, Inc.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero Public License version 3 as
+# published by the Free Software Foundation.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the GNU Affero Public License (http://www.gnu.org/licenses) for more details.
+#
+# You should have received a copy of the GNU Affero Public License
+# along with this program.  
+# ----------------------------------------------------------------------
+#  htm.core
+#  This implements the HTM theory as described in [Numenta's BAMI](https://numenta.com/resources/biological-and-machine-intelligence/)."
+
+
+[build-system]
+requires = ["scikit-build-core>=0.10.7", "pybind11>=2.13.6"]  
+build-backend = "scikit_build_core.build"
+
+
+[project]
+name = "htm"
+version = "2.2.0"
+    # NOTE: if you change this version, you also need to set a git tag to set the version in git.
+    #                 git tag -a v2.2.0 -m "Release 2.2.0" 
+description = "This is a Community Fork of nupic.core-legacy, ported to Python3 bindings and C++ extensions. "
+
+readme = "README.md"
+license = { file = "LICENSE.txt" }
+authors = [
+  { name = "The HTM Community" },
+]
+maintainers = [
+  { name = "Breznak", email = "breznak@github.org"},
+  { name = "David McDougall", email = "ctrl-z-9000-times@github.org "},
+  { name = "David Keeney", email = "dkeeney@github.com"},
+  { name = "Fred Rotbart", email = "fcr@github.org"},
+]
+
+requires-python = ">=3.9"
+
+
+classifiers = [
+  "Development Status :: Released",
+  "License :: OSI Approved :: AGPL-3.0",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: Unix",
+  "Programming Language :: C++",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: AI",
+]
+
+dependencies = [
+    "numpy>=2.0", 
+    "hexy>=1.4.4", 
+    "prettytable>=3.5.0", 
+]
+
+[project.urls]
+Homepage = "https://github.com/htm-community/htm.core"
+Documentation = "https://github.com/htm-community/htm.core/README.md"
+Issues = "https://discourse.numenta.org/"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=6.0",
+    "mock>=3.3", 
+]
+
+
+[tool.scikit-build]
+# see https://github.com/scikit-build/scikit-build-core for options
+minimum-version = "build-system.requires"
+cmake.build-type = "Release"           # Or "Debug" if needed 
+wheel.packages = ["py/htm"]            # where to find python source packages to be included
+cmake.args = [
+  "-DBINDING_BUILD=Python3",    # For Python build
+]
+sdist.include = ["build/Thirdparty", "build/Release"]   # for external dependency overrides. "build" is in .gitignore some parts of it in sdist.
+#install.components = [
+#  { source = "build/Thirdparty/mnist", destination = "htm/data" } 
+#]
+
+[tool.setuptools.package-data]
+htm = ["data/mnist/*"]
+
+		   
+
+
+[tool.pytest]
+	testpaths = ["py/tests"]
+
