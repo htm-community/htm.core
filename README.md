@@ -105,6 +105,17 @@ git clone https://github.com/htm-community/htm.core
     The Python portion of the build is performed in an isolated environment in a temp folder.
 	When the build completes, the build artifacts and cache are deleted.
 
+    Note that if you want to build in a virgin uv environment you will need to install at least 
+    `pip` in this environment and activate the environment. So the steps would be:
+    ```
+	cd <project directory>
+    uv venv --python <python version, e.g. 3.12>
+    uv pip install pip
+    source .venv/bin/activate
+	python htm_install.py
+    ```
+
+
 
 3) After the build completes you are ready to import the library:
     ```shell
