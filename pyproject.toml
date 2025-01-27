@@ -65,7 +65,6 @@ classifiers = [
 dependencies = [
     "hexy>=1.4.4",
     "numpy>=2.0", 
-    "hexy>=1.4.4", 
     "prettytable>=3.5.0", 
     "wcwidth>=0.2.13"
 ]
