@@ -190,7 +190,7 @@ void TMRegion::compute() {
   // Handle reset signal
   if (getInput("resetIn")->hasIncomingLinks()) {
     Array &reset = getInput("resetIn")->getData();
-    NTA_ASSERT(reset.getType() == NTA_BasicType_Real32);
+    //NTA_ASSERT(reset.getType() == NTA_BasicType_Real32);
     if (reset.getCount() == 1 && ((Real32 *)(reset.getBuffer()))[0] != 0) {
       tm_->reset();
       args_.sequencePos = 0; // Position within the current sequence
