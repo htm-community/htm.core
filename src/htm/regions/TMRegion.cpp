@@ -190,10 +190,19 @@ void TMRegion::compute() {
   // Handle reset signal
   if (getInput("resetIn")->hasIncomingLinks()) {
     Array &reset = getInput("resetIn")->getData();
-    NTA_ASSERT(reset.getType() == NTA_BasicType_Real32);
-    if (reset.getCount() == 1 && ((Real32 *)(reset.getBuffer()))[0] != 0) {
-      tm_->reset();
-      args_.sequencePos = 0; // Position within the current sequence
+    if (reset.getType() == NTA_BasicType_Real32) {
+        if (reset.getCount() == 1 && ((Real32 *)(reset.getBuffer()))[0] != 0) {
+            tm_->reset();
+            args_.sequencePos = 0; // Position within the current sequence
+        } else if(reset.getType() == NTA_BasicType_Real64) {
+             if (reset.getCount() == 1 && ((Real64 *)(reset.getBuffer()))[0] != 0) {
+                tm_->reset();
+                args_.sequencePos = 0; // Position within the current sequence
+             }
+        }
+        else {
+             NTA_ASSERT(false) << "the data type of resetIn of TMRegion was unexpected";
+        }
     }
   }
 
