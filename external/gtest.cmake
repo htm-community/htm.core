@@ -40,15 +40,25 @@ else()
     FetchContent_Declare(
         gtest
         URL ${dependency_url}
-		EXCLUDE_FROM_ALL
-		QUIET
+		    EXCLUDE_FROM_ALL
+		    QUIET
     )
 endif()
 
-# For Windows: Prevent overriding the parent project's compiler/linker settings.
-# This will force generation of a shared library for gtest.
-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+# Make sure that GTest does not try to install itself
+set(INSTALL_GTEST OFF)
+set(BUILD_GMOCK OFF)
+
 
 FetchContent_MakeAvailable(gtest)
+
+# For Windows: Prevent overriding the parent project's compiler/linker settings.
+# This will force generation of a shared library for gtest.
+if(MSVC)
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+endif()
+
+set_target_properties(gtest_main PROPERTIES EXCLUDE_FROM_ALL TRUE) # for gtest_main (not used)
+
 
 set(gtest_INCLUDE_DIR "${gtest_SOURCE_DIR}/googletest/include")
