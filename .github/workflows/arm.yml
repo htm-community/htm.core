@@ -4,6 +4,7 @@ on:
   # run every day of the week at 02:00
   schedule:
     - cron: 0 2 * * *
+  workflow_dispatch:
 
 jobs:
  build-arm64-docker:
