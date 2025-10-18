@@ -10,7 +10,7 @@ jobs:
  build-arm64-docker:
   name: Build for ARM64 on Docker
   runs-on: ubuntu-20.04
-  if: (github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags')) || github.event_name == 'schedule' # tag or schedule
+  if: (github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags')) || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' # tag, schedule, or manual
   steps:
     - name: Install docker # bug in ubuntu, conflicts with docker.io
       run: |
