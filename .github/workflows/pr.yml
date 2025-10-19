@@ -18,7 +18,7 @@ jobs:
       matrix:
         python-version: [3.9.x]
         # https://docs.github.com/en/actions/reference/specifications-for-github-hosted-runners
-        os: [ubuntu-20.04, windows-2019, macos-10.15] #TODO upgrade to macos-11.0 when available on GH Actions CI
+        os: [ubuntu-latest, windows-latest, macos-26-xlarge] 
 
     steps:
     - uses: actions/checkout@v2
