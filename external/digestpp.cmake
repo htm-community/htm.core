@@ -13,7 +13,7 @@
 # See the GNU Affero Public License for more details.
 #
 # You should have received a copy of the GNU Affero Public License
-# along with this program.  If not, see http://www.gnu.org/licenses.
+# along with this program.ï¿½ If not, see http://www.gnu.org/licenses.
 # -----------------------------------------------------------------------------
 
 # Download digestpp hash digest package from GitHub archive
@@ -21,7 +21,7 @@
 #  header-only, no build.
 include(FetchContent)
 
-set(dependency_url "https://github.com/kerukuro/digestpp/archive/34ff2eeae397ed744d972d86b5a20f603b029fbd.zip")
+set(dependency_url "https://github.com/kerukuro/digestpp/archive/refs/tags/v3.1.0.zip")
 set(local_override "${CMAKE_SOURCE_DIR}/build/Thirdparty/digestpp")
 
 # Check if local path exists and if so, use it as-is.
