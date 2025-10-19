@@ -24,9 +24,20 @@ jobs:
 
     - name: Tests
       run: |
-        docker run htm-arm64-docker python setup.py test
+        docker run htm-arm64-docker python htm_test.py
 
-    - name: Copy files from docker
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Tag and push Docker image
       run: |
-        sudo docker cp `sudo docker ps -alq`:/usr/local/src/htm.core/dist dist #TODO the `command` is not 100% reliable, replace with some name/id
-        ls dist
+        docker tag htm-arm64-docker ghcr.io/${{ github.repository }}/htm-arm64:latest
+        docker tag htm-arm64-docker ghcr.io/${{ github.repository }}/htm-arm64:${{ github.run_number }}
+        docker tag htm-arm64-docker ghcr.io/${{ github.repository }}/htm-arm64:${{ github.sha }}
+        docker push ghcr.io/${{ github.repository }}/htm-arm64:latest
+        docker push ghcr.io/${{ github.repository }}/htm-arm64:${{ github.run_number }}
+        docker push ghcr.io/${{ github.repository }}/htm-arm64:${{ github.sha }}
