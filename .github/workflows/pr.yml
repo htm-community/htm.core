@@ -5,6 +5,10 @@ on:
   pull_request:
     branches:
     - master
+  # run on push events to the master branch
+  push:
+    branches:
+    - master
   # run every day of the week at 02:00
   schedule:
   - cron: 0 2 * * *
