@@ -15,7 +15,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get remove --purge -y moby-engine moby-cli
-        sudo apt-get install -y qemu-user-static docker.io
+        sudo apt-get install -y qemu-user-static docker
 
     - uses: actions/checkout@v2
 
