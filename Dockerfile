@@ -16,6 +16,9 @@ ARG host=amd64
 FROM multiarch/qemu-user-static as bootstrap
 ARG arch
 ARG host
+LABEL org.opencontainers.image.description="Docker image with a pre-built, tested and packaged community maintained htm.core library"
+LABEL org.opencontainers.image.source="https://github.com/htm-community/htm.core"
+
 RUN echo "Switching from $host to $arch" && uname -a
 
 ## Stage 1: build of htm.core on the target platform
