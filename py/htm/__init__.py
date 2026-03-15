@@ -21,8 +21,6 @@ Most classes in this package support pickling, meaning that they can be
 serialize and deserialized with the standard library's pickle module.
 """
 
-__import__('pkg_resources').declare_namespace(__name__)
-
 from htm.bindings.sdr  import *
 
 __all__ = [

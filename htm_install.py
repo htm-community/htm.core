@@ -157,14 +157,6 @@ def main():
     print("CMake command:", cmake_command)
     subprocess.run(cmake_command, check=True)
 
-    # Reinstall setuptools after --force-reinstall, which can remove it on Python 3.13.
-    # htm/__init__.py imports pkg_resources (part of setuptools) at import time.
-    print("Ensuring setuptools (pkg_resources) is available...")
-    setuptools_cmd = [sys.executable, '-m', 'pip', 'install', 'setuptools']
-    if is_running_in_docker():
-        setuptools_cmd.append('--break-system-packages')
-    subprocess.run(setuptools_cmd, check=True)
-
     print('Installation complete!')
     
 
