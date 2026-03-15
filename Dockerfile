@@ -40,6 +40,10 @@ RUN apk add --no-cache \
   g++ \
   git
 
+# setuptools provides pkg_resources, which htm/__init__.py requires at import time.
+# python:3.13-alpine does not include it by default.
+RUN pip install setuptools
+
 # Set environment variable to indicate we're in Docker (for htm_install.py)
 ENV DOCKER_CONTAINER=1
 
