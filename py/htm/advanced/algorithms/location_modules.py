@@ -167,14 +167,14 @@ class AbstractLocationModule(ABC):
 
         # Cells with a active segment: reinforce the segment
         cellsForActiveSegments = self.connections.mapSegmentsToCells(activeSegments)
-        learningActiveSegments = activeSegments[np.in1d(cellsForActiveSegments, self.getLearnableCells())]
+        learningActiveSegments = activeSegments[np.isin(cellsForActiveSegments, self.getLearnableCells())]
         remainingCells = np.setdiff1d(self.getLearnableCells(), cellsForActiveSegments)
 
         # Remaining cells with a matching segment: reinforce the best
         # matching segment.
         candidateSegments = self.connections.filterSegmentsByCell(matchingSegments, remainingCells)
         cellsForCandidateSegments = (self.connections.mapSegmentsToCells(candidateSegments))
-        candidateSegments = candidateSegments[np.in1d(cellsForCandidateSegments, remainingCells)]
+        candidateSegments = candidateSegments[np.isin(cellsForCandidateSegments, remainingCells)]
         onePerCellFilter = np2.argmaxMulti(potentialOverlaps[candidateSegments], cellsForCandidateSegments)
         learningMatchingSegments = candidateSegments[onePerCellFilter]
 
@@ -756,7 +756,7 @@ class Superficial2DLocationModule(AbstractLocationModule):
         sensorySupportedCells = np.unique(self.connections.mapSegmentsToCells(activeSegments))
 
         inactivated = np.setdiff1d(self.activeCells, sensorySupportedCells)
-        inactivatedIndices = np.in1d(self.cellsForActivePhases, inactivated).nonzero()[0]
+        inactivatedIndices = np.isin(self.cellsForActivePhases, inactivated).nonzero()[0]
         if inactivatedIndices.size > 0:
             self.bumpPhases = np.delete(self.bumpPhases, inactivatedIndices, axis=0)
 
