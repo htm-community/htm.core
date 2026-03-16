@@ -22,11 +22,11 @@ LABEL org.opencontainers.image.source="https://github.com/htm-community/htm.core
 RUN echo "Switching from $host to $arch" && uname -a
 
 ## Stage 1: build of htm.core on the target platform
-# Official Alpine Linux (amd64, arm64, etc).
-#  https://hub.docker.com/_/alpine
-FROM --platform=linux/${arch} alpine:3.19 as build
+# Official Python 3.13 on Alpine (amd64, arm64, etc).
+#  https://hub.docker.com/_/python
+FROM --platform=linux/${arch} python:3.13-alpine3.21 as build
 ARG arch
-#copy value of ARG arch from above 
+#copy value of ARG arch from above
 RUN echo "Building HTM for ${arch}" && uname -a
 
 
@@ -38,23 +38,10 @@ RUN apk add --no-cache \
   cmake \
   make \
   g++ \
-  git \
-  python3 \
-  python3-dev \
-  py3-pip \
-  py3-numpy
-
-# Create python symlink
-RUN ln -s /usr/bin/python3 /usr/local/bin/python && python --version
+  git
 
 # Set environment variable to indicate we're in Docker (for htm_install.py)
 ENV DOCKER_CONTAINER=1
-
-# Remove PEP 668 marker to allow pip installs (safe in Docker)
-RUN rm -f /usr/lib/python*/EXTERNALLY-MANAGED
-
-# Upgrade pip
-RUN python -m pip install --upgrade pip setuptools wheel
 
 # Run the htm_install.py script to build and extract build artifacts
 RUN python htm_install.py

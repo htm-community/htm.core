@@ -217,7 +217,7 @@ class SingleLayerLocationMemory(object):
         cellsForActiveSegments = self.internalConnections.mapSegmentsToCells(self.activeDeltaSegments)
         # Cells that are active from the current location and are part of the new location SDR
         # should be reinforced.
-        learningActiveDeltaSegments = self.activeDeltaSegments[np.in1d(cellsForActiveSegments, newLocation)]
+        learningActiveDeltaSegments = self.activeDeltaSegments[np.isin(cellsForActiveSegments, newLocation)]
         # Find cells that are newly active and not part of the previous location
         remainingCells = np.setdiff1d(newLocation, cellsForActiveSegments)
 
@@ -225,7 +225,7 @@ class SingleLayerLocationMemory(object):
         # segment pair.
         candidateSegments = self.internalConnections.filterSegmentsByCell(matchingDeltaSegments, remainingCells)
         cellsForCandidateSegments = self.internalConnections.mapSegmentsToCells(candidateSegments)
-        candidateSegments = matchingDeltaSegments[np.in1d(cellsForCandidateSegments, remainingCells)]
+        candidateSegments = matchingDeltaSegments[np.isin(cellsForCandidateSegments, remainingCells)]
 
         onePerCellFilter = np2.argmaxMulti(
             prevLocationPotentialOverlaps[candidateSegments]
@@ -305,14 +305,14 @@ class SingleLayerLocationMemory(object):
 
         # Cells with a active segment pair: reinforce the segment
         cellsForActiveSegments = self.featureLocationConnections.mapSegmentsToCells(self.activeFeatureLocationSegments)
-        learningActiveSegments = self.activeFeatureLocationSegments[np.in1d(cellsForActiveSegments, newLocation)]
+        learningActiveSegments = self.activeFeatureLocationSegments[np.isin(cellsForActiveSegments, newLocation)]
         remainingCells = np.setdiff1d(newLocation, cellsForActiveSegments)
 
         # Remaining cells with a matching segment pair: reinforce the best matching
         # segment pair.
         candidateSegments = self.featureLocationConnections.filterSegmentsByCell(matchingSegments, remainingCells)
         cellsForCandidateSegments = self.featureLocationConnections.mapSegmentsToCells(candidateSegments)
-        candidateSegments = candidateSegments[np.in1d(cellsForCandidateSegments, remainingCells)]
+        candidateSegments = candidateSegments[np.isin(cellsForCandidateSegments, remainingCells)]
         onePerCellFilter = np2.argmaxMulti(potentialOverlaps[candidateSegments], cellsForCandidateSegments)
         learningMatchingSegments = candidateSegments[onePerCellFilter]
 

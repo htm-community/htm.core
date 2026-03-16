@@ -156,7 +156,7 @@ def main():
     cmake_command.append(wheel_file)
     print("CMake command:", cmake_command)
     subprocess.run(cmake_command, check=True)
-    
+
     print('Installation complete!')
     
 
