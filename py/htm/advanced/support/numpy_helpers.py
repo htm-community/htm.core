@@ -65,10 +65,10 @@ def setCompare(a, b, aKey=None, bKey=None, leftMinusRight=False, rightMinusLeft=
     aKey = aKey if aKey is not None else a
     bKey = bKey if bKey is not None else b
 
-    aWithinBMask = np.in1d(aKey, bKey)
+    aWithinBMask = np.isin(aKey, bKey)
 
     if rightMinusLeft:
-        bWithinAMask = np.in1d(bKey, aKey)
+        bWithinAMask = np.isin(bKey, aKey)
 
         if leftMinusRight:
             return (a[aWithinBMask], a[~aWithinBMask], b[bWithinAMask])

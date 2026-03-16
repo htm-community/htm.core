@@ -13,12 +13,12 @@
     "dev": "http-server && onchange 'js/**/*.js' -- npm run build"
   },
   "devDependencies": {
-    "rollup": "2.79.2",
+    "rollup": "2.80.0",
     "rollup-plugin-node-resolve": "^2.0.0",
     "tape": "4",
     "uglify-js": "2",
     "onchange": "7.1.0",
-    "http-server": "0.10.0"
+    "http-server": "14.1.1"
   },
   "dependencies": {
     "d3": "^4.10.2"

@@ -16,22 +16,32 @@ ARG host=amd64
 FROM multiarch/qemu-user-static as bootstrap
 ARG arch
 ARG host
+LABEL org.opencontainers.image.description="Docker image with a pre-built, tested and packaged community maintained htm.core library"
+LABEL org.opencontainers.image.source="https://github.com/htm-community/htm.core"
+
 RUN echo "Switching from $host to $arch" && uname -a
 
 ## Stage 1: build of htm.core on the target platform
-# Multiarch Debian 10 Buster (amd64, arm64, etc).
-#  https://hub.docker.com/r/multiarch/debian-debootstrap
-FROM multiarch/alpine:${arch}-latest-stable as build
+# Official Python 3.13 on Alpine (amd64, arm64, etc).
+#  https://hub.docker.com/_/python
+FROM --platform=linux/${arch} python:3.13-alpine3.21 as build
 ARG arch
-#copy value of ARG arch from above 
+#copy value of ARG arch from above
 RUN echo "Building HTM for ${arch}" && uname -a
 
 
 ADD . /usr/local/src/htm.core
 WORKDIR /usr/local/src/htm.core
 
+# Install build dependencies
+RUN apk add --no-cache \
+  cmake \
+  make \
+  g++ \
+  git
 
-
+# Set environment variable to indicate we're in Docker (for htm_install.py)
+ENV DOCKER_CONTAINER=1
 
 # Run the htm_install.py script to build and extract build artifacts
 RUN python htm_install.py

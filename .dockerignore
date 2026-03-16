@@ -1,0 +1,31 @@
+# Exclude build artifacts - these should be built inside the container
+build/
+dist/
+*.egg-info/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Exclude git metadata
+.git/
+.gitignore
+.gitmodules
+
+# Exclude IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Exclude macOS files
+.DS_Store
+
+# Exclude CI/CD files (optional, uncomment if you want to exclude)
+# .github/
+# .circleci/
+
+# Exclude documentation build artifacts
+docs/_build/
+

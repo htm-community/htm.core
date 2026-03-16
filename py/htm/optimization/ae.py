@@ -510,7 +510,7 @@ class Worker(Process):
         print("Started: " + time.asctime( time.localtime(start_time) ) + '\n')
         # Setup memory limit
         if self.memory_limit is not None:
-            if not sys.platform.startswith('win'):
+            if not sys.platform.startswith('win') and not sys.platform.startswith('darwin'):
                 p = psutil.Process()
                 soft, hard = p.rlimit(psutil.RLIMIT_AS)
                 p.rlimit(psutil.RLIMIT_AS, (self.memory_limit, hard))

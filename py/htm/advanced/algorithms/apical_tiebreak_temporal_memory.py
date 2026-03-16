@@ -624,7 +624,7 @@ class ApicalTiebreakTemporalMemory(object):
         candidateCells = np2.getAllCellsInColumns(columns, self.cellsPerColumn)
 
         # Arrange the segment counts into one row per minicolumn.
-        segmentCounts = np.reshape(connections.getSegmentCounts(candidateCells), newshape=(len(columns), self.cellsPerColumn))
+        segmentCounts = np.reshape(connections.getSegmentCounts(candidateCells), (len(columns), self.cellsPerColumn))
 
         # Filter to just the cells that are tied for fewest in their minicolumn.
         minSegmentCounts = np.amin(segmentCounts, axis=1, keepdims=True)

@@ -46,25 +46,31 @@ def main():
             
     # Install build dependencies
     print("Installing build dependencies...")
-    subprocess.run([sys.executable, '-m', 'pip', 'install', 
-              '--upgrade', 'pip', 
-              'build', 
-              'setuptools', 
-              'wheel', 
-              'pybind11', 
-              'packaging',
-              'pytest', 
-              'requests'], check=True)     
+    pip_args = [sys.executable, '-m', 'pip', 'install', '--upgrade']
+    # Add --ignore-installed and --break-system-packages for Docker
+    if is_running_in_docker():
+        pip_args.extend(['--ignore-installed', '--break-system-packages'])
+    pip_args.extend(['pip', 'build', 'setuptools', 'wheel', 'pybind11', 
+                     'packaging', 'pytest', 'requests'])
+    subprocess.run(pip_args, check=True)     
               
     # Get the project version and minimum Cmake version from pyproject.toml
     # Install toml if needed (for Python < 3.11)
     if sys.version_info < (3, 11):
-        subprocess.run([sys.executable, '-m', 'pip', 'install', 'toml'], check=True)
+        toml_args = [sys.executable, '-m', 'pip', 'install']
+        if is_running_in_docker():
+            toml_args.extend(['--ignore-installed', '--break-system-packages'])
+        toml_args.append('toml')
+        subprocess.run(toml_args, check=True)
         import toml
+        # toml package expects text mode
+        with open("pyproject.toml", "r") as f:
+            pyproject = toml.load(f)
     else:
         import tomllib as toml
-    with open("pyproject.toml", "rb") as f:
-        pyproject = toml.load(f)
+        # tomllib expects binary mode
+        with open("pyproject.toml", "rb") as f:
+            pyproject = toml.load(f)
         
     project_version = pyproject["project"]["version"]
     print(f"Version: {project_version}")
@@ -74,7 +80,11 @@ def main():
     min_cmake_version = get_cmake_minimum_version()
     if not check_cmake_version(min_cmake_version):
         print(f"Installing CMake >={min_cmake_version} using pip...")
-        subprocess.run([sys.executable, '-m', 'pip', 'install', f'cmake>={min_cmake_version}'], check=True)
+        cmake_args = [sys.executable, '-m', 'pip', 'install']
+        if is_running_in_docker():
+            cmake_args.extend(['--ignore-installed', '--break-system-packages'])
+        cmake_args.append(f'cmake>={min_cmake_version}')
+        subprocess.run(cmake_args, check=True)
          
     # if the htm_core library does not exist, go build it.   
     htm_core_lib_path = os.path.join("build", "Release", "lib")
@@ -140,10 +150,13 @@ def main():
         
     # Install the package in Python.
     print("Installing the wheel...")
-    cmake_command = [sys.executable, '-m', 'pip', 'install', '--force-reinstall', wheel_file]
+    cmake_command = [sys.executable, '-m', 'pip', 'install', '--force-reinstall']
+    if is_running_in_docker():
+        cmake_command.append('--break-system-packages')
+    cmake_command.append(wheel_file)
     print("CMake command:", cmake_command)
     subprocess.run(cmake_command, check=True)
-    
+
     print('Installation complete!')
     
 
@@ -158,6 +171,10 @@ def in_venv() -> bool:
     
 def is_running_in_docker():
     """ Checks if the script is running inside a Docker container. """
+    # Check for DOCKER_CONTAINER environment variable (set in Dockerfile)
+    if os.environ.get('DOCKER_CONTAINER'):
+        return True
+    # Check cgroup for docker (traditional method)
     try:
         with open('/proc/1/cgroup', 'r') as f:
             return 'docker' in f.read()

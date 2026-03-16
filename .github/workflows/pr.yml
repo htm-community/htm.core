@@ -5,6 +5,10 @@ on:
   pull_request:
     branches:
     - master
+  # run on push events to the master branch
+  push:
+    branches:
+    - master
   # run every day of the week at 02:00
   schedule:
   - cron: 0 2 * * *
@@ -16,15 +20,15 @@ jobs:
     strategy:
       #max-parallel: 4
       matrix:
-        python-version: [3.9.x]
+        python-version: [3.13.x]
         # https://docs.github.com/en/actions/reference/specifications-for-github-hosted-runners
-        os: [ubuntu-20.04, windows-2019, macos-10.15] #TODO upgrade to macos-11.0 when available on GH Actions CI
+        os: [ubuntu-latest, windows-latest, macos-latest] 
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Set up Python ${{ matrix.python-version }} for PR
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
 
@@ -56,17 +60,35 @@ jobs:
 
     - name: Install dependencies
       run: |
-        python -m pip install -r requirements.txt
-        python setup.py configure
+        python -m pip install setuptools wheel
 
-    - name: build htmcore with setup.py
-      run: python setup.py install --user --force
+    - name: Setup venv and build htmcore (Linux & macOS)
+      if: matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest'
+      run: |
+        python -m venv .venv
+        source .venv/bin/activate
+        python htm_install.py
 
-    - name: C++ & Python Tests
-      run: python setup.py test
+    - name: Setup venv and build htmcore (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        python -m venv .venv
+        .venv\Scripts\python.exe htm_install.py
+
+    - name: C++ & Python Tests (Linux & macOS)
+      if: matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest'
+      run: |
+        source .venv/bin/activate
+        python htm_test.py
+
+    - name: C++ & Python Tests (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        .venv\Scripts\activate.bat
+        .venv\Scripts\python.exe htm_test.py
 
     - name: Memory leaks check (valgrind)
-      if: matrix.os == 'ubuntu-20.04'
+      if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get -y install valgrind
         LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${PWD}/build/Release/lib valgrind  --show-leak-kinds=definite,indirect,possible,reachable --track-origins=yes --num-callers=40 --error-exitcode=3 ./build/Release/bin/hello 5 || exit 1
@@ -78,36 +100,10 @@ jobs:
       run: ./build/Release/bin/napi_hello 1000 || exit 3
 
     - name: Hello example (dynamically linked)
-      if: matrix.os == 'ubuntu-20.04'
+      if: matrix.os == 'ubuntu-latest'
       run: LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${PWD}/build/Release/lib ./build/Release/bin/dynamic_hello 1000 || exit 4
 
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v4
       with:
-        name: "pr_build"
-        path: build/Release/distr/dist
-
-
-
-  build-debug:
-    name: Build and test in Debug mode
-    #currently cannot run on Linux & Debug due to a bug in YAML parser: issue #218
-    runs-on: macOS-latest
-    steps:
-    - uses: actions/checkout@v2
-
-    - name: Install dependencies (Debug)
-      run: |
-        mkdir -p build/scripts
-        cd build/scripts
-        cmake ../.. -DCMAKE_BUILD_TYPE=Debug
-
-    - name: Debug build
-      run: |
-        cd build/scripts
-        make -j2 && make install
-
-    - name: C++ Tests
-      run: |
-        cd build/scripts
-        ../Debug/bin/unit_tests
-
+        name: htm-core-${{ matrix.os }}-py-${{ matrix.python-version }}-${{ github.ref_name }}-${{ github.sha }}
+        path: dist/*.whl
