@@ -1,0 +1,40 @@
+## Debian slim variant of the htm.core Docker image.
+##
+## Produces a glibc-based image where manylinux wheels (nautilus-trader,
+## numpy, scipy, etc.) install from pre-built binaries without needing
+## clang, rust, or other compilers at CI time.
+##
+## Build:
+##   docker build -f Dockerfile.debian -t htm-amd64-debian --build-arg arch=amd64 .
+##
+## The Alpine Dockerfile remains the default for arm64 and other uses.
+
+ARG arch=amd64
+
+## Stage 0: cross-compile bootstrap (only needed when target != host)
+FROM multiarch/qemu-user-static AS bootstrap
+ARG arch
+LABEL org.opencontainers.image.description="Docker image with a pre-built, tested and packaged community maintained htm.core library"
+LABEL org.opencontainers.image.source="https://github.com/htm-community/htm.core"
+
+## Stage 1: build htm.core on the target platform
+FROM --platform=linux/${arch} python:3.13-slim AS build
+ARG arch
+RUN echo "Building HTM for ${arch}" && uname -a
+
+ADD . /usr/local/src/htm.core
+WORKDIR /usr/local/src/htm.core
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  cmake \
+  make \
+  g++ \
+  git \
+  && rm -rf /var/lib/apt/lists/*
+
+# Set environment variable to indicate we're in Docker (for htm_install.py)
+ENV DOCKER_CONTAINER=1
+
+# Run the htm_install.py script to build and extract build artifacts
+RUN python htm_install.py
