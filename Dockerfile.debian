@@ -18,7 +18,7 @@ LABEL org.opencontainers.image.description="Docker image with a pre-built, teste
 LABEL org.opencontainers.image.source="https://github.com/htm-community/htm.core"
 
 ## Stage 1: build htm.core on the target platform
-FROM --platform=linux/${arch} python:3.13-slim AS build
+FROM --platform=linux/${arch} python:3.14-slim AS build
 ARG arch
 RUN echo "Building HTM for ${arch}" && uname -a
 
