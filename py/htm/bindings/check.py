@@ -31,9 +31,7 @@ def checkImportBindingsExtensions():
 
   Throws ImportError on failure.
   """
-  import htm.bindings.math
   import htm.bindings.algorithms
-  import htm.bindings.engine_internal
   import htm.bindings.encoders
   import htm.bindings.sdr
 

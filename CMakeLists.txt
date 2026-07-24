@@ -1,110 +1,99 @@
 # -----------------------------------------------------------------------------
-# HTM Community Edition of NuPIC
-# Copyright (C) 2015-2018, Numenta, Inc.
-#   Migrated to scikit-build-core:  David Keeney, dkeeney@gmail.com, Dec 2024
+# Single-HTM-Core -- STANDALONE build entry point.
 #
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero Public License version 3 as
-# published by the Free Software Foundation.
+# This file makes the Single-HTM-Core engine buildable on its own, with this
+# directory as the CMake source root:
 #
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the GNU Affero Public License for more details.
+#     cmake -S Single-HTM-Core -B build -DCMAKE_BUILD_TYPE=Release
+#     cmake --build build
 #
-# You should have received a copy of the GNU Affero Public License
-# along with this program.  If not, see http://www.gnu.org/licenses.
+# It is intended for using / contributing the single-HTM engine independently
+# (e.g. a pull request back to upstream htm.core). It is NOT used by
+# PyHTM-core's own build: htm_install.py drives the repository-root
+# CMakeLists.txt, which compiles Single-HTM-Core/src and the bindings
+# directly and never configures this file. The two paths are independent.
+#
+# Copies of CommonCompilerConfig.cmake and DetectMarch.cmake live in this
+# directory so the subtree carries everything it needs to compile alone.
 # -----------------------------------------------------------------------------
-
 cmake_minimum_required(VERSION 3.21)
+project(htm_core CXX C)
 
-project(htm LANGUAGES C CXX)
+# BINDING_BUILD is a STRING, not a boolean: option() would coerce it to
+# ON/OFF and the "CPP_Only" default would never be seen, which silently
+# changes what DetectMarch does (the library cap only applies to a CPP_Only
+# build) and leaves the value unusable in a STREQUAL comparison.
+set(BINDING_BUILD "CPP_Only" CACHE STRING
+    "Python3 to build pybind11 modules, CPP_Only for the C++ library only")
+set_property(CACHE BINDING_BUILD PROPERTY STRINGS CPP_Only Python3)
 
-
-set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}")
-
-set(CMAKE_VERBOSE_MAKEFILE OFF)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-get_filename_component(REPOSITORY_DIR ${CMAKE_SOURCE_DIR} ABSOLUTE)
+# This directory is both the module path (for CommonCompilerConfig /
+# DetectMarch / external modules) and the source root the sub-CMakeLists
+# anchor on via PROJECT_SOURCE_DIR.
+set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}")
+get_filename_component(REPOSITORY_DIR "${CMAKE_CURRENT_SOURCE_DIR}" ABSOLUTE)
 set_property(GLOBAL PROPERTY REPOSITORY_DIR "${REPOSITORY_DIR}")
-cmake_policy(SET CMP0135 NEW)   # sets timestamp downloading along with dependancy download.
+cmake_policy(SET CMP0135 NEW)
 
-if(BINDING_BUILD STREQUAL "Python2")
-  message(FATAL_ERROR "The Extension library cannot be built for Python 2 using MSVC.  Use Python 3.x")
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
 
-message(STATUS "REPOSITORY_DIR       = ${REPOSITORY_DIR}")
-message(STATUS "CMAKE_BINARY_DIR     = ${CMAKE_BINARY_DIR}")
-message(STATUS "CMAKE_BUILD_TYPE     = ${CMAKE_BUILD_TYPE}")
-message(STATUS "CMAKE_INSTALL_PREFIX = ${CMAKE_INSTALL_PREFIX}")
-message(STATUS "SKBUILD_DATA_DIR     = ${SKBUILD_DATA_DIR}")
-message(STATUS "SKBUILD_PLATLIB_DIR  = ${SKBUILD_PLATLIB_DIR}")
-message(STATUS "CMake Version:       = ${CMAKE_VERSION}")
-message(STATUS "BINDING_BUILD        = ${BINDING_BUILD}")
-
-
-IF (BINDING_BUILD STREQUAL "CPP_Only" )
-
-    # define ${core_library} for the entire project.
-    set(core_library   htm_core)
-	if(MSVC)
-	    set(src_lib_shared)
-	else()
-	    set(src_lib_shared htm_core_shared)
-	endif()
-
-
-
-	# get the project version from pyproject.toml and write it to the file VERSION.
-	# NOTE: this is the VERSION in pyproject.toml. 
-	#       copy this to the VERSION file in the project source.
-	set(VERSION ${PROJECT_VERSION1})
-	file(WRITE VERSION "${VERSION}") 
-
-	message(STATUS "VERSION              = ${VERSION}")
-	message("")
-
-	# Determine common toolchain settings, compiler and link flags
-	include(CommonCompilerConfig)
-
-	message(STATUS "CMAKE_CXX_COMPILER_ID= ${CMAKE_CXX_COMPILER_ID}")
-	message(STATUS "CMAKE_CXX_COMPILER_VERSION=${CMAKE_CXX_COMPILER_VERSION}")
-	message(STATUS "CMAKE_CXX_COMPILER   = ${CMAKE_CXX_COMPILER}")
-	message(STATUS "CMAKE_CXX_STANDARD   = ${CMAKE_CXX_STANDARD}")
-	message(STATUS "PLATFORM             = ${PLATFORM}")
-	message(STATUS "BITNESS              = ${BITNESS}")
-	message(STATUS "INTERNAL_CXX_FLAGS   = ${INTERNAL_CXX_FLAGS}")
-	message(STATUS "INTERNAL_LINKER_FLAGS= ${INTERNAL_LINKER_FLAGS}")
-	message(STATUS "INTERNAL_LINKER_FLAGS_STR= ${INTERNAL_LINKER_FLAGS_STR}")
-	message(STATUS "CMAKE_EXE_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS}")
-	message(STATUS "COMMON_COMPILER_DEFINITIONS_STR=${COMMON_COMPILER_DEFINITIONS_STR}")
-	message(STATUS "COMMON_OS_LIBS       = ${COMMON_OS_LIBS}")
-
-
-
-	# Set up builds of external dependencies and get their exports.
-	# (see individual external/*.cmake modules for exported settings and functions)
-	include(external/bootstrap.cmake)
- 
-
-
-	# Build the C++ library
-	add_subdirectory(src)
+# Version: prefer an explicit -DPROJECT_VERSION1=..., else the VERSION file,
+# else a placeholder. (Upstream htm.core supplies this via its own flow.)
+if(DEFINED PROJECT_VERSION1)
+  set(VERSION ${PROJECT_VERSION1})
+elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" VERSION)
+  string(STRIP "${VERSION}" VERSION)
 else()
+  set(VERSION "0.0.0")
+endif()
+message(STATUS "Single-HTM-Core standalone build -- VERSION ${VERSION}")
 
-	message(STATUS "VERSION              = ${VERSION}")
-	# Determine common toolchain settings, compiler and link flags
-	include(CommonCompilerConfig)
-	set(HTM_CORE_LIB_DIR "${CMAKE_SOURCE_DIR}/build/Release/lib" CACHE PATH "Path to the built htm_core library")
-    list(APPEND CORE_LIB_INCLUDES "${CMAKE_SOURCE_DIR}/build/Release/include")
+# Shared toolchain flags + adaptive SIMD (same modules the repo root uses).
+include(CommonCompilerConfig)
 
-	message(STATUS "INTERNAL_CXX_FLAGS   = ${INTERNAL_CXX_FLAGS}")
-	message(STATUS "INTERNAL_LINKER_FLAGS= ${INTERNAL_LINKER_FLAGS}")
-    message(STATUS "HTM_CORE_LIB_DIR     = ${HTM_CORE_LIB_DIR}") # Add this line
-
-	# Build the Python extension interface using pybind11.
-	# Add subdirectory for Python bindings
-	add_subdirectory(bindings/py/cpp_src)
+set(core_library htm_core)
+if(MSVC)
+  set(src_lib_shared)
+else()
+  set(src_lib_shared htm_core_shared)
 endif()
 
+# External dependencies (cereal, MurmurHash3) -- anchored on REPOSITORY_DIR.
+# (The repo-root build uses external/bootstrap.cmake, which hardcodes the
+# nested layout; standalone we include the same two modules directly so the
+# subtree needs no path edits.)
+include(${CMAKE_CURRENT_SOURCE_DIR}/external/common.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/external/cereal.cmake)
+set(EXTERNAL_INCLUDES "")
+list(APPEND EXTERNAL_INCLUDES "${cereal_INCLUDE_DIR}")
+list(APPEND EXTERNAL_INCLUDES "${common_INCLUDE_DIR}")
 
+# The C++ library itself.
+add_subdirectory(src)
+
+# Optionally also build the pybind11 modules against the just-built library.
+#
+# The library and its headers are taken from where THIS build actually puts
+# them, not from an install prefix. A parent project may stage an install
+# first and point these at it; on their own, `cmake -S . -B build
+# -DBINDING_BUILD=Python3 && cmake --build build` has to work in one shot,
+# with no install step, which is what the paths below give.
+if(BINDING_BUILD STREQUAL "Python3")
+  set(HTM_CORE_LIB_DIR "${CMAKE_BINARY_DIR}/src"
+      CACHE PATH "Path to the built htm_core library")
+
+  # Headers of the library itself, the generated ones (Version.hpp), and the
+  # external ones cereal.cmake / common.cmake resolved above.
+  list(APPEND CORE_LIB_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/src")
+  list(APPEND CORE_LIB_INCLUDES "${CMAKE_BINARY_DIR}/src")
+  list(APPEND CORE_LIB_INCLUDES ${EXTERNAL_INCLUDES})
+
+  # An install prefix, if one was staged, still takes part.
+  list(APPEND CORE_LIB_INCLUDES "${CMAKE_BINARY_DIR}/Release/include")
+
+  add_subdirectory(bindings/py/cpp_src)
+endif()

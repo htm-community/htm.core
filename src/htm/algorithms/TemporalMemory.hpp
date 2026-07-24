@@ -691,6 +691,20 @@ private:
   vector<SynapseIdx> numActiveConnectedSynapsesForSegment_;
   vector<SynapseIdx> numActivePotentialSynapsesForSegment_;
 
+  /**
+   * Reusable scratch for the previous-active-cells SDR that activateCells()
+   * hands to the learning routines. Previously a local SDR was constructed
+   * every step; besides the object churn, its lazily-built dense view (the
+   * buffer adaptSegment reads, cells+external bytes) died with it each
+   * step. As a member, both the sparse and dense buffers keep their
+   * capacity across steps -- and the existing setSparse() swap trick means
+   * activeCells_ and this scratch simply ping-pong their sparse buffers,
+   * so the whole hand-off is allocation-free at steady state.
+   * (Re)dimensioned lazily on first use and after deserialization; NOT
+   * serialized -- it carries no state between steps.
+   */
+  SDR prevActiveCellsScratch_;
+
   Random rng_;
 
   /**

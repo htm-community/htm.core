@@ -59,7 +59,8 @@ R"(Compatibility Warning: This classes API is unstable and may change without wa
     py_Connections.def("createSynapse", &Connections::createSynapse,
         py::arg("segment"),
         py::arg("presynaticCell"),
-        py::arg("permanence"));
+        py::arg("permanence"),
+        py::arg("skipDuplicateCheck") = false);
 
     py_Connections.def("growSynapses", &Connections::growSynapses,
         py::arg("segment"),

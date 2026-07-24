@@ -16,40 +16,9 @@
 # ----------------------------------------------------------------------
 
 """
-## @file
+htm.bindings -- native extension modules (algorithms, sdr, encoders).
+
+On Python 3 the compiled extension modules that live in this directory are
+imported directly (e.g. `import htm.bindings.algorithms`); no loader shim is
+needed here.
 """
-
-def _import_helper(name):
-  import sys
-  from os.path import dirname, join
-
-  # Fast path: see if the module has already been imported.
-  try:
-    return sys.modules[name]
-  except KeyError:
-    pass
-
-  _mod = None
-  basename = name[len("htm.bindings."):]
-  import importlib.util
-  import glob
-  spec = None
-  filename = glob.glob(join(dirname(__file__), basename +"*"))
-  print("filename={}".format(filename))
-  if filename:
-    spec = importlib.util.spec_from_file_location(name, filename[0])	
-  if spec is None:
-    print("name=htm.bindings.{} no import library found".format(name))
-  else:
-    _mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(_mod);
-    sys.modules[name] = _mod
-  return _mod;
-
-import sys
-if sys.version_info[0] < 3:
-  algorithms      = _import_helper('htm.bindings.algorithms')
-  engine_internal = _import_helper('htm.bindings.engine_internal')
-  math            = _import_helper('htm.bindings.math')
-  sdr             = _import_helper('htm.bindings.sdr')
-  encoders        = _import_helper('htm.bindings.encoders')

@@ -24,7 +24,8 @@
 #include "htm/types/Sdr.hpp"
 
 #include <numeric>
-#include <algorithm> // std::sort, std::accumulate
+#include <algorithm> // std::sort, std::accumulate, std::set_difference
+#include <iterator>  // std::back_inserter
 
 using namespace std;
 
@@ -405,6 +406,27 @@ namespace htm {
             }
         }
         SDR::setDenseInplace();
+    }
+
+
+    SDR& SparseDistributedRepresentation::subtract(
+            const SDR &minuend, const SDR &subtrahend) {
+        NTA_CHECK( minuend.dimensions    == dimensions );
+        NTA_CHECK( subtrahend.dimensions == dimensions );
+        // Both sparse views are sorted & unique (SDR invariant), so a single
+        // merge-style std::set_difference pass produces the sorted & unique
+        // result directly -- no dense conversion needed. The result is built
+        // into a local first so the operation stays correct even when this
+        // SDR is itself one of the inputs (setSparse then swap()s it in).
+        const auto &a = minuend.getSparse();
+        const auto &b = subtrahend.getSparse();
+        SDR_sparse_t result;
+        result.reserve( a.size() );
+        std::set_difference( a.cbegin(), a.cend(),
+                             b.cbegin(), b.cend(),
+                             std::back_inserter( result ) );
+        setSparse( result );
+        return *this;
     }
 
 

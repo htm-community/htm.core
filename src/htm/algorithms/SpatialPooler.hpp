@@ -257,7 +257,7 @@ public:
         input bits which are turned on. 
         Replaces: SP.calculateOverlaps_(), SP.getOverlaps()
    */
-  virtual const vector<SynapseIdx> compute(const SDR &input, const bool learn, SDR &active);
+  virtual vector<SynapseIdx> compute(const SDR &input, const bool learn, SDR &active);
 
 
   /**
@@ -849,6 +849,20 @@ public:
   vector<UInt> initMapPotential_(UInt column, bool wrapAround);
 
   /**
+    In-place variant of initMapPotential_ used by initialize().
+    Writes the dense potential mask into `potential` (resized/overwritten) and
+    uses `columnInputsScratch` as a reusable buffer for the neighborhood scan,
+    so the per-column loop in initialize() performs ZERO heap allocations for
+    these arrays after the first iteration (initialize() previously allocated
+    two dense input-sized vectors -- ~40KB combined at 8192 inputs -- for
+    every one of the 2048 columns, per HTM module). RNG call order is
+    identical to the by-value variant, so results are bit-exact.
+  */
+  void initMapPotential_(UInt column, bool wrapAround,
+                         vector<UInt> &columnInputsScratch,
+                         vector<UInt> &potential);
+
+  /**
   Returns a randomly generated permanence value for a synapses that is
   initialized in a connected state.
 
@@ -888,6 +902,15 @@ public:
   */
   vector<Permanence> initPermanence_(const vector<UInt> &potential, const Real connectedPct);
 
+  /**
+    In-place variant of initPermanence_ used by initialize(). Overwrites
+    `perm` (a caller-owned reusable buffer) instead of allocating a fresh
+    input-sized vector per column. RNG call order is identical to the
+    by-value variant, so results are bit-exact.
+  */
+  void initPermanence_(const vector<UInt> &potential, const Real connectedPct,
+                       vector<Permanence> &perm);
+
   void clip_(vector<Permanence> &perm) const;
 
   /**
@@ -905,7 +928,16 @@ public:
       a sparse SDR vector containing the indices of the active columns.
       Internally delegates to local/global inhibition functions.
   */
-  std::vector<CellIdx> inhibitColumns_(const vector<Real> &overlaps) const;
+  /**
+   * Templated on the overlap element type so compute() can inhibit
+   * directly on the raw integer overlap counts when boosting is disabled
+   * (boostStrength == 0, PyHTM's default) -- skipping the per-step
+   * int->float conversion copy entirely. Integer and float comparisons of
+   * exactly-representable values order identically, so the selected winner
+   * set (and therefore all downstream state) is bit-exact either way.
+   */
+  template<typename OverlapT>
+  std::vector<CellIdx> inhibitColumns_(const std::vector<OverlapT> &overlaps) const;
 
   /**
      Perform global inhibition.
@@ -928,7 +960,8 @@ public:
      @return activeColumns
      an (sprase SDR) vector containing the indices of the active columns.
   */
-  std::vector<CellIdx> inhibitColumnsGlobal_(const vector<Real> &overlaps, const Real density) const;
+  template<typename OverlapT>
+  std::vector<CellIdx> inhibitColumnsGlobal_(const std::vector<OverlapT> &overlaps, const Real density) const;
 
   /**
      Performs local inhibition.
@@ -956,7 +989,8 @@ public:
      @return activeColumns
      an (sparse SDR) vector containing the indices of the active columns.
   */
-  std::vector<CellIdx> inhibitColumnsLocal_(const vector<Real> &overlaps, const Real density) const;
+  template<typename OverlapT>
+  std::vector<CellIdx> inhibitColumnsLocal_(const std::vector<OverlapT> &overlaps, const Real density) const;
 
   /**
       The primary method in charge of learning.
@@ -1070,6 +1104,20 @@ public:
   */
   static void updateDutyCyclesHelper_(vector<Real> &dutyCycles,
                                       const SDR &newValues, 
+                                      const UInt period);
+
+  /**
+      Overload of updateDutyCyclesHelper_ that takes the raw per-column
+      overlap counts directly instead of an SDR. Any non-zero count is
+      treated as an active bit -- exactly what updateDutyCycles_ previously
+      encoded into a temporary SDR before calling the SDR overload. Per
+      element the arithmetic is identical (decay-multiply, then increment on
+      the non-zero entries), so results are bit-exact -- but the per-step
+      temporary SDR construction (heap allocations + sparse-vector build,
+      every learning step of every column, in every HTM module) is gone.
+  */
+  static void updateDutyCyclesHelper_(vector<Real> &dutyCycles,
+                                      const vector<SynapseIdx> &newValues,
                                       const UInt period);
 
   /**
@@ -1214,6 +1262,17 @@ protected:
   Connections connections_;
 
   vector<Real> boostedOverlaps_;
+  /**
+   * Reusable scratch for inhibitColumnsGlobal_'s index sort. Rebuilt from
+   * scratch (iota) on every call, so it carries no state between steps --
+   * it only exists to avoid re-allocating a numColumns_-sized vector every
+   * compute() step. `mutable` because inhibitColumns*_ are const. Not
+   * serialized (pure scratch, like boostedOverlaps_ it is recreated on use).
+   * Thread-safety: an SP instance is only ever driven by one thread at a
+   * time (PyHTM's hive assigns each model to exactly one worker), same
+   * assumption boostedOverlaps_ already relies on.
+   */
+  mutable std::vector<CellIdx> inhibitScratch_;
 
 
   UInt version_;

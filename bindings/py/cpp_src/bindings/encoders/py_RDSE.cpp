@@ -109,11 +109,20 @@ fields are filled in automatically.)");
         py_RDSE.def_property_readonly("size",
             [](RDSE &self) { return self.size; });
 
-        py_RDSE.def("encode", &RDSE::encode, R"()");
+        py_RDSE.def("encode", [](RDSE &self, Real64 value, SDR &output) {
+            // Pure C++ (hashing + dense fill), no Python objects touched ->
+            // release the GIL so feature encoders running on other hive
+            // threads proceed in parallel.
+            py::gil_scoped_release release;
+            self.encode(value, output);
+        }, R"()");
 
         py_RDSE.def("encode", [](RDSE &self, Real64 value) {
             auto sdr = new SDR({self.size});
-            self.encode(value, *sdr);
+            {
+                py::gil_scoped_release release;
+                self.encode(value, *sdr);
+            }
             return sdr;
         });
 

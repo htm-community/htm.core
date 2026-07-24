@@ -34,9 +34,10 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <set>      //operator== segment-set comparison
+#include <limits>    //numeric_limits (getPredictiveCells adjacent-dedup sentinel)
 #include <string>
 #include <vector>
-#include <set>
 
 #include <htm/algorithms/TemporalMemory.hpp>
 #include <htm/algorithms/Anomaly.hpp>
@@ -279,7 +280,15 @@ void TemporalMemory::activateCells(const SDR &activeColumns, const bool learn) {
     }
     auto &sparse = activeColumns.getSparse();
 
-  SDR prevActiveCells({static_cast<CellIdx>(numberOfCells() + externalPredictiveInputs_)});
+  // Reusable member scratch instead of a per-step local SDR (see the
+  // member's docs). Lazy (re)dimensioning covers both first use and the
+  // post-deserialization case, where the scratch comes back default-sized.
+  const CellIdx prevCellsSize =
+      static_cast<CellIdx>(numberOfCells() + externalPredictiveInputs_);
+  if (prevActiveCellsScratch_.size != prevCellsSize) {
+    prevActiveCellsScratch_.initialize({ prevCellsSize });
+  }
+  SDR &prevActiveCells = prevActiveCellsScratch_;
   prevActiveCells.setSparse(activeCells_);
   activeCells_.clear();
 
@@ -387,13 +396,17 @@ void TemporalMemory::activateDendrites(const bool learn,
       winnerCells_.push_back( static_cast<CellIdx>(winner + numberOfCells()) );
   }
 
-  const size_t length = connections.segmentFlatListLength();
-
-  numActivePotentialSynapsesForSegment_.assign(length, 0);
-  numActiveConnectedSynapsesForSegment_ = connections_.computeActivity(
-                              numActivePotentialSynapsesForSegment_,
-                              activeCells_,
-			      learn);
+  // Fully in-place activity pass: both per-segment counter vectors are
+  // long-lived members whose capacity is retained across steps, so once
+  // they reach their high-water size this performs ZERO heap allocations.
+  // Previously the connected counts came back by value -- a fresh
+  // segment-count-sized vector (a size that GROWS as the TM learns) was
+  // allocated, plus one more full copy on the return path, every single
+  // step of every module.
+  connections_.computeActivity(numActiveConnectedSynapsesForSegment_,
+                               numActivePotentialSynapsesForSegment_,
+                               activeCells_,
+                               learn);
 
   // Active segments, connected synapses.
   activeSegments_.clear();
@@ -544,15 +557,25 @@ SDR TemporalMemory::getPredictiveCells() const {
   correctDims.push_back(static_cast<CellIdx>(getCellsPerColumn()));
   SDR predictive(correctDims);
 
-  std::set<CellIdx> uniqueCells;
-  //uniqueCells.reserve(activeSegments_.size());
-
+  // activeSegments_ is sorted by compareSegments(), whose primary key IS the
+  // owning cell (see Connections::compareSegments). So segments of the same
+  // cell are adjacent, and the cell sequence is already sorted ascending.
+  // The original code pushed every cell into a std::set to sort+deduplicate:
+  // a red-black tree that heap-allocates a node PER INSERT, every timestep,
+  // in every HTM module. Since the input is already sorted, a linear scan
+  // that skips adjacent repeats produces the exact same sorted unique list
+  // with zero tree allocations. setSparse() then swap()s the vector in, so
+  // no further copy happens either.
+  vector<CellIdx> predictiveCells;
+  predictiveCells.reserve(activeSegments_.size());
+  CellIdx previous = std::numeric_limits<CellIdx>::max();
   for (const auto segment : activeSegments_) {
     const CellIdx cell = connections.cellForSegment(segment);
-    uniqueCells.insert(cell); //set keeps the cells unique
+    if (cell != previous) {   // adjacent-duplicate skip == set-dedup on sorted input
+      predictiveCells.push_back(cell);
+      previous = cell;
+    }
   }
-
-  vector<CellIdx> predictiveCells(uniqueCells.begin(), uniqueCells.end());
   predictive.setSparse(predictiveCells);
   return predictive;
 }

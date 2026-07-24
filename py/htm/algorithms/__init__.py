@@ -3,6 +3,4 @@ __all__ = [
     'SpatialPooler',
     'TemporalMemory',
     'Connections',
-    'Classifier',
-    'Predictor',
 ]

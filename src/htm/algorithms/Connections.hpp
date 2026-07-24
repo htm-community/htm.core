@@ -315,6 +315,21 @@ public:
                   const bool timeseries = false);
 
   /**
+   * Pre-reserve space in the internal storage vectors to avoid reallocations
+   * during bulk-creation of synapses (e.g. SP / TM init). This is an
+   * optimisation only -- the storage will still grow as needed if the
+   * estimate is too low. Calling reserveBuffers() with an over-estimate is
+   * harmless: reserve() never shrinks the vector.
+   *
+   * @param estimatedSynapses  Upper-bound estimate of the total number of
+   *                           synapses that will be created.
+   * @param estimatedSegments  Upper-bound estimate of total segments
+   *                           (optional; 0 = leave segments_ alone).
+   */
+  void reserveBuffers(const Size estimatedSynapses,
+                      const Size estimatedSegments = 0);
+
+  /**
    * Creates a segment on the specified cell.
    *
    * @param cell Cell to create segment on.
@@ -357,10 +372,23 @@ public:
    *   then we either keep the old one, or update the old one to have higher permanence (from the new call).
    *
    * @return Created synapse - index to the newly created synapse. Use `dataForSynapse(returnedValue)` to work with it.
+   *
+   * @param skipDuplicateCheck  When true, the caller GUARANTEES this
+   *        (segment, presynapticCell) pair is not already present, letting
+   *        this method skip the linear scan over the segment's existing
+   *        synapses. That scan makes bulk construction O(n^2) in the
+   *        segment's synapse count: SpatialPooler::initialize builds one
+   *        segment per column and adds its whole potential pool in a single
+   *        pass over distinct, increasing presynaptic indices, so no
+   *        duplicate is possible there. Passing true in that (and only that)
+   *        situation is behaviour-identical to the checked path but removes
+   *        the quadratic cost. Default false preserves the original,
+   *        always-safe behaviour for every other caller.
    */
   Synapse createSynapse(const Segment segment,
                         const CellIdx presynapticCell,
-                        Permanence permanence);
+                        Permanence permanence,
+                        const bool skipDuplicateCheck = false);
 
 
 
@@ -572,6 +600,29 @@ public:
 
   std::vector<SynapseIdx> computeActivity(const std::vector<CellIdx> &activePresynapticCells, 
 		                          const bool learn = true);
+
+  /**
+   * Fully in-place variant of computeActivity for steady-state stepping.
+   *
+   * Both output vectors are caller-owned reusable buffers, resized (with
+   * retained capacity) and overwritten here. The by-value overloads above
+   * materialised a fresh segment-count-sized vector on EVERY step -- and
+   * that count GROWS as the TM learns (easily into the 100Ks) -- plus one
+   * more full copy on the two-output path's return. With this variant the
+   * TM's per-step activity pass performs zero heap allocations once the
+   * buffers have reached their high-water capacity.
+   *
+   * Counting loops, their order, and the learn/timeseries side effects are
+   * byte-for-byte the same as the by-value overloads (all three now share
+   * one private core), so results are bit-exact.
+   *
+   * @param numActiveConnectedSynapsesForSegment  out: connected counts.
+   * @param numActivePotentialSynapsesForSegment  out: potential counts.
+   */
+  void computeActivity(std::vector<SynapseIdx> &numActiveConnectedSynapsesForSegment,
+                       std::vector<SynapseIdx> &numActivePotentialSynapsesForSegment,
+                       const std::vector<CellIdx> &activePresynapticCells,
+                       const bool learn);
 
   /**
    * The primary method in charge of learning.   Adapts the permanence values of
@@ -835,8 +886,17 @@ protected:
                               std::vector<Synapse> &synapsesForPresynapticCell,
                               std::vector<Segment> &segmentsForPresynapticCell);
 
-  /** 
-   *  Remove least useful Segment from cell. 
+  /**
+   *  Ensure the presynaptic-cell-indexed vectors are large enough to be
+   *  indexed by `cell`. Called from createSynapse (the only place that adds
+   *  new presynaptic cells). Grows all four vectors together so they stay
+   *  the same length. Cheap amortised resize; runs at build time, not on
+   *  the hot path.
+   */
+  void ensurePresynapticCapacity_(const CellIdx cell);
+
+  /**
+   *  Remove least useful Segment from cell.
    */
   void pruneSegment_(const CellIdx& cell);
 
@@ -849,14 +909,44 @@ private:
   Permanence               connectedThreshold_; //TODO make const
   UInt32 iteration_ = 0;
 
-  // Extra bookkeeping for faster computing of segment activity.
- 
-  struct identity { constexpr size_t operator()( const CellIdx t ) const noexcept { return t; };   };	//TODO in c++20 use std::identity 
+  /**
+   * Shared core of all computeActivity overloads: zeroes `out` to segment
+   * count, applies the learn/timeseries side effects, and accumulates the
+   * connected-synapse counts. Extracted so the by-value and in-place public
+   * overloads are provably identical.
+   */
+  void computeActivityConnected_(std::vector<SynapseIdx> &out,
+                                 const std::vector<CellIdx> &activePresynapticCells,
+                                 const bool learn);
 
-  std::unordered_map<CellIdx, std::vector<Synapse>, identity> potentialSynapsesForPresynapticCell_;
-  std::unordered_map<CellIdx, std::vector<Synapse>, identity> connectedSynapsesForPresynapticCell_;
-  std::unordered_map<CellIdx, std::vector<Segment>, identity> potentialSegmentsForPresynapticCell_;
-  std::unordered_map<CellIdx, std::vector<Segment>, identity> connectedSegmentsForPresynapticCell_;
+  /**
+   * Reusable buffer for growSynapses' shuffled candidate list. growSynapses
+   * runs for every learning segment on every step and previously copied its
+   * candidate cells into a fresh vector each call (the copy is required --
+   * the list gets shuffled). The scratch is fully overwritten (assign) per
+   * call, carries no state between calls, and is NOT serialized. Safe
+   * because a Connections instance is only ever driven by one thread at a
+   * time (PyHTM's hive owns each model with exactly one worker) and
+   * growSynapses is not re-entrant.
+   */
+  std::vector<CellIdx> growCandidatesScratch_;
+
+  // Extra bookkeeping for faster computing of segment activity.
+  //
+  // These were originally std::unordered_map<CellIdx, vector<...>>. But the
+  // key, a presynaptic CellIdx, is a dense non-negative index, so the hash
+  // map only added cost: every probe in the hot loops (computeActivity,
+  // updateSynapsePermanence) was a likely cache miss on a hash bucket.
+  // Switching to plain vectors indexed directly by CellIdx turns each of
+  // those probes into an O(1) contiguous array access with no hashing.
+  // An empty inner vector means "this presynaptic cell currently has no
+  // synapses of that kind" (we no longer erase keys; we just leave the
+  // slot empty), so reads must guard with: cell < size() && !slot.empty().
+  std::vector<std::vector<Synapse>> potentialSynapsesForPresynapticCell_;
+  std::vector<std::vector<Synapse>> connectedSynapsesForPresynapticCell_;
+  std::vector<std::vector<Segment>> potentialSegmentsForPresynapticCell_;
+
+  std::vector<std::vector<Segment>> connectedSegmentsForPresynapticCell_;
 
   // These three members should be used when working with highly correlated
   // data. The vectors store the permanence changes made by adaptSegment.

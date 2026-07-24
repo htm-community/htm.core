@@ -29,7 +29,7 @@
 
 #include <htm/algorithms/TemporalMemory.hpp>
 
-#include "bindings/engine/py_utils.hpp"
+#include "bindings/py_utils.hpp"  // shared pybind helpers (moved out of the removed engine bindings)
 
 namespace py = pybind11;
 using namespace htm;
@@ -71,6 +71,7 @@ Example usage:
                 , bool
                 , UInt
 		, TemporalMemory::ANMode>(),
+            py::call_guard<py::gil_scoped_release>(),
 R"(Initialize the temporal memory (TM) using the given parameters.
 
 Argument columnDimensions
@@ -236,6 +237,9 @@ R"(See also standard library function: pickle.loads(...))");
 
         py_HTM.def("activateCells", [](HTM_t& self, const SDR& activeColumns, bool learn)
         {
+            // Pure C++ compute, no Python return value → safe to drop the GIL
+            // for the whole call so other threads can run their nodes.
+            py::gil_scoped_release release;
             self.activateCells(activeColumns, learn);
         },
 R"(Calculate the active cells, using the current active columns and
@@ -243,13 +247,15 @@ dendrite segments.  Grow and reinforce synapses.)"
             , py::arg("activeColumns"), py::arg("learn") = true);
 
         py_HTM.def("compute", [](HTM_t& self, const SDR &activeColumns, bool learn)
-            { self.compute(activeColumns, learn); },
+            { py::gil_scoped_release release;
+              self.compute(activeColumns, learn); },
                 py::arg("activeColumns"),
                 py::arg("learn") = true);
 
         py_HTM.def("compute", [](HTM_t& self, const SDR &activeColumns, bool learn,
                                  const SDR &externalPredictiveInputsActive, const SDR &externalPredictiveInputsWinners)
-            { self.compute(activeColumns, learn, externalPredictiveInputsActive, externalPredictiveInputsWinners); },
+            { py::gil_scoped_release release;
+              self.compute(activeColumns, learn, externalPredictiveInputsActive, externalPredictiveInputsWinners); },
 R"(Perform one time step of the Temporal Memory algorithm.
 
 This method calls activateDendrites, then calls activateCells. Using
@@ -285,19 +291,28 @@ Resets sequence state of the TM.)");
             auto dims = self.getColumnDimensions();
             dims.push_back( static_cast<UInt32>(self.getCellsPerColumn()) );
             SDR *cells = new SDR( dims );
-            self.getActiveCells(*cells);
+            {
+                // Release the GIL ONLY around the pure-C++ fill. The SDR is a
+                // C++ object so populating it needs no GIL. We re-acquire
+                // (scope ends) before returning, because handing the pointer
+                // back to pybind builds a Python object — that DOES need the GIL.
+                py::gil_scoped_release release;
+                self.getActiveCells(*cells);
+            }
             return cells;
         });
 
         py_HTM.def("activateDendrites", [](HTM_t &self, bool learn) {
             SDR externalPredictiveInputs({ self.externalPredictiveInputs });
+            py::gil_scoped_release release;
             self.activateDendrites(learn, externalPredictiveInputs, externalPredictiveInputs);
         },
             py::arg("learn"));
 
         py_HTM.def("activateDendrites",
             [](HTM_t &self, bool learn,const SDR &externalPredictiveInputsActive, const SDR &externalPredictiveInputsWinners)
-                { self.activateDendrites(learn, externalPredictiveInputsActive, externalPredictiveInputsWinners); },
+                { py::gil_scoped_release release;
+                  self.activateDendrites(learn, externalPredictiveInputsActive, externalPredictiveInputsWinners); },
 R"(Calculate dendrite segment activity, using the current active cells.  Call
 this method before calling getPredictiveCells, getActiveSegments, or
 getMatchingSegments.  In each time step, only the first call to this
@@ -322,7 +337,20 @@ See TM.compute() for details of the parameters.)",
             py::arg("externalPredictiveInputsWinners"));
 
         py_HTM.def("getPredictiveCells", [](const HTM_t& self)
-            { return self.getPredictiveCells();},
+            {
+                // PyHTM calls this every step of every module. The segment
+                // scan inside getPredictiveCells() and the copy into a heap
+                // SDR are pure C++ -> run them with the GIL released so
+                // sibling models on other threads keep computing. Only
+                // wrapping the pointer into a Python object (after this
+                // scope) needs the GIL; pybind takes ownership of it.
+                SDR *predictive = nullptr;
+                {
+                    py::gil_scoped_release release;
+                    predictive = new SDR( self.getPredictiveCells() );
+                }
+                return predictive;
+            },
 R"()");
 
         py_HTM.def("getWinnerCells", [](const HTM_t& self)
@@ -330,7 +358,13 @@ R"()");
             auto dims = self.getColumnDimensions();
             dims.push_back( static_cast<UInt32>(self.getCellsPerColumn()) );
             SDR *winnerCells = new SDR( dims );
-            self.getWinnerCells(*winnerCells);
+            {
+                // Same pattern as getActiveCells: the fill is pure C++, so
+                // drop the GIL around it; re-acquire (scope end) before
+                // handing the pointer to pybind.
+                py::gil_scoped_release release;
+                self.getWinnerCells(*winnerCells);
+            }
             return winnerCells;
         },
 R"()");
@@ -371,7 +405,18 @@ Argument cell
 Returns the created segment (index handle).)");
 
         py_HTM.def("cellsToColumns", [](const HTM_t& self, const SDR &cellsSDR )
-	{ return self.cellsToColumns(cellsSDR); },
+	{
+	    // Called every step by PyHTM right after getPredictiveCells. The
+	    // dense scatter + sparse rebuild inside cellsToColumns() is pure
+	    // C++ -> release the GIL around it (and around the copy into the
+	    // heap SDR); only the Python wrapping afterwards needs the GIL.
+	    SDR *cols = nullptr;
+	    {
+	        py::gil_scoped_release release;
+	        cols = new SDR( self.cellsToColumns(cellsSDR) );
+	    }
+	    return cols;
+	},
 R"(Converts cells SDR to corresponding columns SDR.
 
 Argument cells

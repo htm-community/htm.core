@@ -26,6 +26,9 @@
 #include <set>
 
 #include <htm/algorithms/Connections.hpp>
+#if defined(__AVX512F__) && defined(__AVX512CD__)
+  #include <immintrin.h>
+#endif
 
 
 using std::endl;
@@ -66,6 +69,37 @@ void Connections::initialize(CellIdx numCells, Permanence connectedThreshold, bo
 }
 
 
+void Connections::reserveBuffers(const Size estimatedSynapses,
+                                 const Size estimatedSegments) {
+  // Pre-allocate the heavy vectors so that bulk-creation of synapses (e.g.
+  // SP::initialize calling createSynapse millions of times across 26
+  // parallel HTM modules) does not trigger the ~22 doublings-and-copies
+  // that an unhinted std::vector goes through as it grows. Each of those
+  // doublings copies every existing SynapseData -- on large pyramids this
+  // costs a large fraction of init time, AND in the multi-thread case it
+  // hits the heap hard (which is the original PyHTM thread-build slowdown).
+  // reserve() never shrinks, so passing an upper-bound estimate is safe.
+  synapses_.reserve(estimatedSynapses);
+  if (estimatedSegments > 0) {
+    segments_.reserve(estimatedSegments);
+  }
+}
+
+
+void Connections::ensurePresynapticCapacity_(const CellIdx cell) {
+  // Grow all four presynaptic-indexed vectors together so they can be
+  // indexed directly by `cell`. Only called from createSynapse (build
+  // time). Newly added slots are empty vectors = "no synapses yet".
+  if (cell >= potentialSynapsesForPresynapticCell_.size()) {
+    const size_t newSize = static_cast<size_t>(cell) + 1;
+    potentialSynapsesForPresynapticCell_.resize(newSize);
+    connectedSynapsesForPresynapticCell_.resize(newSize);
+    potentialSegmentsForPresynapticCell_.resize(newSize);
+    connectedSegmentsForPresynapticCell_.resize(newSize);
+  }
+}
+
+
 UInt32 Connections::subscribe(ConnectionsEventHandler *handler) {
   UInt32 token = nextEventToken_++;
   eventHandlers_[token] = handler;
@@ -102,7 +136,7 @@ void Connections::pruneSegment_(const CellIdx& cell) {
   destroySegment(leastUsefulSegment);
 }
 
-Segment Connections::createSegment(const CellIdx cell, 
+Segment Connections::createSegment(const CellIdx cell,
 	                           const SegmentIdx maxSegmentsPerCell) {
 
   // Limit number of segments per cell. If exceeded, remove the least recently used ones.
@@ -140,7 +174,8 @@ Segment Connections::createSegment(const CellIdx cell,
 
 Synapse Connections::createSynapse(Segment segment,
                                    CellIdx presynapticCell,
-                                   Permanence permanence) {
+                                   Permanence permanence,
+                                   const bool skipDuplicateCheck) {
 
   // Skip cells that are already synapsed on by this segment
   // Biological motivation (?):
@@ -152,22 +187,29 @@ Synapse Connections::createSynapse(Segment segment,
   // That would give such input a stronger connection.
   // Synapses are supposed to have binary effects (0 or 1) but duplicate synapses give
   // them (synapses 0/1) varying levels of strength.
-  for (const Synapse& syn : synapsesForSegment(segment)) {
-    const CellIdx existingPresynapticCell = dataForSynapse(syn).presynapticCell; //TODO 1; add way to get all presynaptic cells for segment (fast)
-    if (presynapticCell == existingPresynapticCell) {
-      //synapse (connecting to this presyn cell) already exists on the segment; don't create a new one, exit early and return the existing
-      NTA_ASSERT(synapseExists_(syn));
-      //TODO what is the strategy on creating a new synapse, while the same already exists (on the same segment, presynapticCell) ??
-      //1. just keep the older (former default)
-      //2. throw an error (ideally, user should not createSynapse() but rather updateSynapsePermanence())
-      //3. create a duplicit new synapse -- NO. This is the only choice that is incorrect! HTM works on binary synapses, duplicates would break that.
-      //4. update to the max of the permanences (default)
+  //
+  // This scan is O(existing synapses on the segment), so adding a whole
+  // potential pool one synapse at a time is O(n^2). Callers that can
+  // guarantee no duplicate (see the header contract, e.g. SP::initialize)
+  // pass skipDuplicateCheck=true to bypass it; the result is identical.
+  if (!skipDuplicateCheck) {
+    for (const Synapse& syn : synapsesForSegment(segment)) {
+      const CellIdx existingPresynapticCell = dataForSynapse(syn).presynapticCell; //TODO 1; add way to get all presynaptic cells for segment (fast)
+      if (presynapticCell == existingPresynapticCell) {
+        //synapse (connecting to this presyn cell) already exists on the segment; don't create a new one, exit early and return the existing
+        NTA_ASSERT(synapseExists_(syn));
+        //TODO what is the strategy on creating a new synapse, while the same already exists (on the same segment, presynapticCell) ??
+        //1. just keep the older (former default)
+        //2. throw an error (ideally, user should not createSynapse() but rather updateSynapsePermanence())
+        //3. create a duplicit new synapse -- NO. This is the only choice that is incorrect! HTM works on binary synapses, duplicates would break that.
+        //4. update to the max of the permanences (default)
 
-      auto& synData = synapses_[syn];
-      if(permanence > synData.permanence) updateSynapsePermanence(syn, permanence);
-      return syn;
-    }
-  } //else: the new synapse is not duplicit, so keep creating it. 
+        auto& synData = synapses_[syn];
+        if(permanence > synData.permanence) updateSynapsePermanence(syn, permanence);
+        return syn;
+      }
+    } //else: the new synapse is not duplicit, so keep creating it.
+  }
 
   // Get an index into the synapses_ list, for the new synapse to reside at.
   Synapse synapse;
@@ -188,7 +230,10 @@ Synapse Connections::createSynapse(Segment segment,
   synapseData.segment         = segment;
   // Start in disconnected state.
   synapseData.permanence           = connectedThreshold_ - static_cast<Permanence>(1.0);
-  synapseData.presynapticMapIndex_ = 
+  // With a map, indexing by a new presynapticCell auto-created the slot.
+  // With direct-indexed vectors we must grow them first.
+  ensurePresynapticCapacity_(presynapticCell);
+  synapseData.presynapticMapIndex_ =
     (Synapse)potentialSynapsesForPresynapticCell_[presynapticCell].size();
   potentialSynapsesForPresynapticCell_[presynapticCell].push_back(synapse);
   potentialSegmentsForPresynapticCell_[presynapticCell].push_back(segment);
@@ -294,26 +339,19 @@ void Connections::destroySynapse(const Synapse synapse) {
   if( synapseData.permanence >= connectedThreshold_ ) {
     segmentData.numConnected--;
 
+    // Direct index instead of .at(); we no longer erase the slot when it
+    // becomes empty (can't erase a key from a vector). An empty inner
+    // vector is the "no synapses here" signal, which all readers handle.
     removeSynapseFromPresynapticMap_(
       synapseData.presynapticMapIndex_,
-      connectedSynapsesForPresynapticCell_.at( presynCell ),
-      connectedSegmentsForPresynapticCell_.at( presynCell ));
-
-    if( connectedSynapsesForPresynapticCell_.at( presynCell ).empty() ){
-      connectedSynapsesForPresynapticCell_.erase( presynCell );
-      connectedSegmentsForPresynapticCell_.erase( presynCell );
-    }
+      connectedSynapsesForPresynapticCell_[ presynCell ],
+      connectedSegmentsForPresynapticCell_[ presynCell ]);
   }
   else {
     removeSynapseFromPresynapticMap_(
       synapseData.presynapticMapIndex_,
-      potentialSynapsesForPresynapticCell_.at( presynCell ),
-      potentialSegmentsForPresynapticCell_.at( presynCell ));
-
-    if( potentialSynapsesForPresynapticCell_.at( presynCell ).empty() ){
-      potentialSynapsesForPresynapticCell_.erase( presynCell );
-      potentialSegmentsForPresynapticCell_.erase( presynCell );
-    }
+      potentialSynapsesForPresynapticCell_[ presynCell ],
+      potentialSegmentsForPresynapticCell_[ presynCell ]);
   }
 
   for(auto i = 0u; i < segmentData.synapses.size(); i++) {
@@ -334,7 +372,7 @@ void Connections::updateSynapsePermanence(const Synapse synapse,
   permanence = std::max(permanence, minPermanence );
 
   auto &synData = synapses_[synapse];
-  
+
   const bool before = synData.permanence >= connectedThreshold_;
   const bool after  = permanence         >= connectedThreshold_;
 
@@ -351,7 +389,7 @@ void Connections::updateSynapsePermanence(const Synapse synapse,
     auto &connectedPreseg = connectedSegmentsForPresynapticCell_[presyn];
     const auto &segment   = synData.segment;
     auto &segmentData     = segments_[segment];
-    
+
     if( after ) { //connect
       segmentData.numConnected++;
 
@@ -377,8 +415,11 @@ void Connections::updateSynapsePermanence(const Synapse synapse,
       potentialPreseg.push_back( segment );
     }
 
-    for (auto h : eventHandlers_) { //TODO handle callbacks in performance-critical method only in Debug?
-      h.second->onUpdateSynapsePermanence(synapse, permanence);
+    if (!eventHandlers_.empty()) { // callbacks are only registered by debug/inspection tooling;
+                                   // skip the map iteration setup on the per-synapse hot path.
+      for (auto h : eventHandlers_) {
+        h.second->onUpdateSynapsePermanence(synapse, permanence);
+      }
     }
 }
 
@@ -405,13 +446,14 @@ bool Connections::compareSegments(const Segment a, const Segment b) const {
 vector<Synapse> Connections::synapsesForPresynapticCell(const CellIdx presynapticCell) const {
   vector<Synapse> all;
 
-  if (potentialSynapsesForPresynapticCell_.count(presynapticCell)) {
-    const auto& potential = potentialSynapsesForPresynapticCell_.at(presynapticCell);
+  // Direct-indexed vectors: guard with size() instead of map.count().
+  if (presynapticCell < potentialSynapsesForPresynapticCell_.size()) {
+    const auto& potential = potentialSynapsesForPresynapticCell_[presynapticCell];
     all.assign(potential.cbegin(), potential.cend());
   }
 
-  if (connectedSynapsesForPresynapticCell_.count(presynapticCell)) {
-    const auto& connected = connectedSynapsesForPresynapticCell_.at(presynapticCell);
+  if (presynapticCell < connectedSynapsesForPresynapticCell_.size()) {
+    const auto& connected = connectedSynapsesForPresynapticCell_[presynapticCell];
     all.insert( all.cend(), connected.cbegin(), connected.cend());
   }
 
@@ -428,9 +470,64 @@ void Connections::reset() noexcept
   currentUpdates_.clear();
 }
 
-vector<SynapseIdx> Connections::computeActivity(const vector<CellIdx> &activePresynapticCells, const bool learn) {
 
-  vector<SynapseIdx> numActiveConnectedSynapsesForSegment(segments_.size(), 0);
+/* ---------------------------------------------------------------------------
+ * Segment-histogram accumulation: for every active presynaptic cell, bump
+ * the counter of every segment in its (contiguous) list.
+ *
+ * Scalar semantics: ++out[segment] for each listed segment, in list order.
+ * Integer addition is order-independent, so ANY accumulation strategy is
+ * bit-identical to the scalar loop -- which is exactly what the AVX-512
+ * path below exploits:
+ *   - indices are u32 -> 16 per zmm register;
+ *   - vpconflictd detects duplicate segment ids inside the 16-lane window;
+ *   - no duplicates (the common case once the histogram is wider than a
+ *     few hundred bins): gather 16 counters, +1, scatter back;
+ *   - any duplicate or a sub-16 tail: plain scalar increments.
+ * Counters accumulate into a u32 scratch (public counters are u16, which
+ * dword scatters would corrupt pairwise); the caller folds scratch into
+ * the u16 output afterwards. Guarded at COMPILE time: builds whose CPU
+ * level lacks AVX-512 (HTM_MARCH < x86-64-v4) compile the scalar loop
+ * only, with zero overhead.
+ * ------------------------------------------------------------------------- */
+/* Per-thread u32 scratch: public counters are u16 (dword scatters would
+ * corrupt neighbor pairs), and each pool worker steps different Connections
+ * instances concurrently -- thread_local gives isolation with zero change
+ * to the Connections ABI. Capacity is retained across steps per thread. */
+static thread_local std::vector<htm::UInt32> tlsHist;
+
+static inline void accumulate_segment_list(htm::UInt32 *hist,
+                                           const htm::Segment *idx,
+                                           std::size_t n) {
+#if defined(__AVX512F__) && defined(__AVX512CD__)
+  std::size_t i = 0;
+  const __m512i ones = _mm512_set1_epi32(1);
+  for (; i + 16 <= n; i += 16) {
+    const __m512i vidx =
+        _mm512_loadu_si512(reinterpret_cast<const void *>(idx + i));
+    const __m512i conf = _mm512_conflict_epi32(vidx);
+    if (_mm512_test_epi32_mask(conf, conf) == 0) {
+      __m512i cur = _mm512_i32gather_epi32(vidx, hist, 4);
+      cur = _mm512_add_epi32(cur, ones);
+      _mm512_i32scatter_epi32(hist, vidx, cur, 4);
+    } else {
+      for (std::size_t j = 0; j < 16; ++j) ++hist[idx[i + j]];
+    }
+  }
+  for (; i < n; ++i) ++hist[idx[i]];
+#else
+  for (std::size_t i = 0; i < n; ++i) ++hist[idx[i]];
+#endif
+}
+
+void Connections::computeActivityConnected_(vector<SynapseIdx> &out,
+                                            const vector<CellIdx> &activePresynapticCells,
+                                            const bool learn) {
+  // assign() reuses the caller's existing capacity -- for the in-place
+  // overload below this is what turns the per-step, segment-count-sized
+  // allocation (which grows as the TM learns) into a zero-allocation
+  // overwrite.
+  out.assign(segments_.size(), 0);
   if(learn) iteration_++;
 
   if( timeseries_ ) {
@@ -441,14 +538,67 @@ vector<SynapseIdx> Connections::computeActivity(const vector<CellIdx> &activePre
   }
 
   // Iterate through all connected synapses.
+  // Use a single find() instead of count()+at(): the original did TWO hash
+  // lookups per active cell (one to check existence, one to fetch). find()
+  // does it in one. On the hot path (every iteration, every model) this
+  // halves the hash-map probes -- each of which is a likely cache miss.
+  // Direct-indexed vector: a bounds check + emptiness is all we need, and
+  // it replaces the hash probe entirely. This is THE hot loop -- runs every
+  // iteration over every active presynaptic cell -- so turning each hash
+  // lookup into a contiguous O(1) array access is the main payoff of the
+  // map -> vector switch.
+  const auto connSize = connectedSegmentsForPresynapticCell_.size();
+  tlsHist.assign(segments_.size(), 0u);
   for (const auto& cell : activePresynapticCells) {
-    if (connectedSegmentsForPresynapticCell_.count(cell)) {
-      for(const auto& segment : connectedSegmentsForPresynapticCell_.at(cell)) {
-        ++numActiveConnectedSynapsesForSegment[segment];
-      }
+    if (cell < connSize) {
+      const auto &lst = connectedSegmentsForPresynapticCell_[cell];
+      accumulate_segment_list(tlsHist.data(), lst.data(), lst.size());
     }
   }
+  for (std::size_t s = 0; s < tlsHist.size(); ++s)
+    out[s] = static_cast<SynapseIdx>(tlsHist[s]);
+}
+
+
+vector<SynapseIdx> Connections::computeActivity(const vector<CellIdx> &activePresynapticCells, const bool learn) {
+
+  vector<SynapseIdx> numActiveConnectedSynapsesForSegment;
+  computeActivityConnected_(numActiveConnectedSynapsesForSegment, activePresynapticCells, learn);
   return numActiveConnectedSynapsesForSegment;
+}
+
+
+void Connections::computeActivity(
+    vector<SynapseIdx> &numActiveConnectedSynapsesForSegment,
+    vector<SynapseIdx> &numActivePotentialSynapsesForSegment,
+    const vector<CellIdx> &activePresynapticCells,
+    const bool learn) {
+  // Fully in-place steady-state variant: both outputs are reusable caller
+  // buffers, resized with retained capacity -- no per-step vector
+  // materialisation at all (see the header documentation). Shares the exact
+  // same core and loop order as the by-value overloads, so results are
+  // bit-exact.
+  computeActivityConnected_(numActiveConnectedSynapsesForSegment,
+                            activePresynapticCells, learn);
+
+  // Iterate through all potential synapses.
+  numActivePotentialSynapsesForSegment.assign(
+      numActiveConnectedSynapsesForSegment.begin(),
+      numActiveConnectedSynapsesForSegment.end());
+
+  // Same direct-index optimisation as the connected loop above.
+  const auto potSize = potentialSegmentsForPresynapticCell_.size();
+  tlsHist.assign(segments_.size(), 0u);
+  for (const auto& cell : activePresynapticCells) {
+    if (cell < potSize) {
+      const auto &lst = potentialSegmentsForPresynapticCell_[cell];
+      accumulate_segment_list(tlsHist.data(), lst.data(), lst.size());
+    }
+  }
+  for (std::size_t s = 0; s < tlsHist.size(); ++s)
+    numActivePotentialSynapsesForSegment[s] =
+        static_cast<SynapseIdx>(numActivePotentialSynapsesForSegment[s] +
+                                tlsHist[s]);
 }
 
 
@@ -458,8 +608,13 @@ vector<SynapseIdx> Connections::computeActivity(
     const bool learn) {
   NTA_ASSERT(numActivePotentialSynapsesForSegment.size() == segments_.size());
 
-  // Iterate through all connected synapses.
-  const vector<SynapseIdx>& numActiveConnectedSynapsesForSegment = computeActivity( activePresynapticCells, learn );
+  // Legacy API kept for compatibility (caller pre-sizes the potential buffer
+  // and takes the connected counts by value). Delegates to the same shared
+  // core as the other overloads; owning the vector directly also drops the
+  // extra full copy the old return-from-const-ref version paid.
+  vector<SynapseIdx> numActiveConnectedSynapsesForSegment;
+  computeActivityConnected_(numActiveConnectedSynapsesForSegment,
+                            activePresynapticCells, learn);
   NTA_ASSERT(numActiveConnectedSynapsesForSegment.size() == segments_.size());
 
   // Iterate through all potential synapses.
@@ -467,22 +622,28 @@ vector<SynapseIdx> Connections::computeActivity(
              numActiveConnectedSynapsesForSegment.end(),
              numActivePotentialSynapsesForSegment.begin());
 
+  // Same direct-index optimisation as the connected loop above.
+  const auto potSize = potentialSegmentsForPresynapticCell_.size();
+  tlsHist.assign(segments_.size(), 0u);
   for (const auto& cell : activePresynapticCells) {
-    if (potentialSegmentsForPresynapticCell_.count(cell)) {
-      for(const auto& segment : potentialSegmentsForPresynapticCell_.at(cell)) {
-        ++numActivePotentialSynapsesForSegment[segment];
-      }
+    if (cell < potSize) {
+      const auto &lst = potentialSegmentsForPresynapticCell_[cell];
+      accumulate_segment_list(tlsHist.data(), lst.data(), lst.size());
     }
   }
+  for (std::size_t s = 0; s < tlsHist.size(); ++s)
+    numActivePotentialSynapsesForSegment[s] =
+        static_cast<SynapseIdx>(numActivePotentialSynapsesForSegment[s] +
+                                tlsHist[s]);
   return numActiveConnectedSynapsesForSegment;
 }
 
 
-void Connections::adaptSegment(const Segment segment, 
+void Connections::adaptSegment(const Segment segment,
                                const SDR &inputs,
                                const Permanence increment,
-                               const Permanence decrement, 
-			       const bool pruneZeroSynapses, 
+                               const Permanence decrement,
+			       const bool pruneZeroSynapses,
 			       const UInt segmentThreshold)
 {
   const auto &inputArray = inputs.getDense();
@@ -504,7 +665,7 @@ void Connections::adaptSegment(const Segment segment,
       }
 
     //prune permanences that reached zero
-    if (pruneZeroSynapses and 
+    if (pruneZeroSynapses and
         synapseData.permanence + update < htm::minPermanence + htm::Epsilon) { //new value will disconnect the synapse
       destroyLater.push_back(synapse);
       prunedSyns_++; //for statistics
@@ -533,7 +694,7 @@ void Connections::adaptSegment(const Segment segment,
     NTA_ASSERT(pruneZeroSynapses) << "Setting segmentThreshold only makes sense when pruneZeroSynapses is allowed.";
   }
   #endif
-  if(pruneZeroSynapses and synapsesForSegment(segment).size() < segmentThreshold) { 
+  if(pruneZeroSynapses and synapsesForSegment(segment).size() < segmentThreshold) {
     destroySegment(segment);
     prunedSegs_++; //statistics
   }
@@ -561,8 +722,8 @@ void Connections::raisePermanencesToThreshold(
   if( synapses.empty())
     return;   // No synapses to raise permanences to, no work to do.
 
-  // Prune empty segment? No. 
-  // The SP calls this method, but the SP does not do any pruning. 
+  // Prune empty segment? No.
+  // The SP calls this method, but the SP does not do any pruning.
   // The TM already has code to do pruning, but it doesn't ever call this method.
 
   // There can be situations when synapses are pruned so the segment has too few
@@ -579,7 +740,7 @@ void Connections::raisePermanencesToThreshold(
   // permance by such that it becomes a connected synapse.  After that there
   // will be at least N synapses connected.
 
-  // Threshold is ensured to be >=1 by condition at very beginning if(thresh == 0)... 
+  // Threshold is ensured to be >=1 by condition at very beginning if(thresh == 0)...
   auto minPermSynPtr = synapses.begin() + threshold - 1;
 
   const auto permanencesGreater = [&](const Synapse &A, const Synapse &B)
@@ -668,7 +829,7 @@ vector<CellIdx> Connections::presynapticCellsForSegment(const Segment segment) c
 
 
 void Connections::destroyMinPermanenceSynapses(
-                              const Segment segment, 
+                              const Segment segment,
 			      const size_t nDestroy,
                               const vector<CellIdx> &excludeCells)
 {
@@ -702,15 +863,22 @@ void Connections::destroyMinPermanenceSynapses(
 
 
 
-void Connections::growSynapses(const Segment segment, 
-		                          const vector<Synapse>& growthCandidates, 
+void Connections::growSynapses(const Segment segment,
+		                          const vector<Synapse>& growthCandidates,
 					  const Permanence initialPermanence,
 					  Random& rng,
 					  const size_t maxNew,
 					  const size_t maxSynapsesPerSegment) {
 
-  //0. copy input vector - candidate cells on input
-  vector<CellIdx> candidates(growthCandidates.begin(), growthCandidates.end());
+  //0. copy input vector - candidate cells on input.
+  // The copy itself is required (the list gets shuffled below), but it now
+  // lands in a long-lived member scratch instead of a fresh vector: this
+  // function runs for every learning segment on every step, and assign()
+  // reuses the scratch's capacity, so steady-state cost is a memcpy with no
+  // allocation. See the member's docs for the (single-threaded,
+  // non-reentrant) safety argument.
+  vector<CellIdx> &candidates = growCandidatesScratch_;
+  candidates.assign(growthCandidates.begin(), growthCandidates.end());
 
   //1. figure the number of new synapses to grow
   size_t nActual = std::min(maxNew, candidates.size());
@@ -743,11 +911,17 @@ void Connections::growSynapses(const Segment segment,
 namespace htm {
 /**
  * print statistics in human readable form
- */ 
+ */
 std::ostream& operator<< (std::ostream& stream, const Connections& self)
 {
   stream << "Connections:" << std::endl;
-  const auto numPresyns = self.potentialSynapsesForPresynapticCell_.size();
+  // The vectors are sized to the max presynaptic CellIdx, so .size() now
+  // counts empty slots too. Count only slots that actually hold synapses
+  // to reproduce the old map.size() semantics for this stat line.
+  size_t numPresyns = 0;
+  for (const auto& slot : self.potentialSynapsesForPresynapticCell_) {
+    if (!slot.empty()) ++numPresyns;
+  }
   stream << "    Inputs (" << numPresyns
          << ") ~> Outputs (" << self.cells_.size()
          << ") via Segments (" << self.numSegments() << ")" << std::endl;
@@ -804,9 +978,9 @@ std::ostream& operator<< (std::ostream& stream, const Connections& self)
 
   stream << "    Synapses Dead (" << (Real) synapsesDead / self.numSynapses()
          << "%) Saturated (" <<   (Real) synapsesSaturated / self.numSynapses() << "%)" << std::endl;
-  stream << "    Synapses pruned (" << (Real) self.prunedSyns_ / self.numSynapses() 
+  stream << "    Synapses pruned (" << (Real) self.prunedSyns_ / self.numSynapses()
 	 << "%) Segments pruned (" << (Real) self.prunedSegs_ / self.numSegments() << "%)" << std::endl;
-  stream << "    Buffer for destroyed synapses: " << self.destroyedSynapses_.size() 
+  stream << "    Buffer for destroyed synapses: " << self.destroyedSynapses_.size()
 	 << "    Buffer for destroyed segments: " << self.destroyedSegments_.size() << std::endl;
 
   return stream;
@@ -834,7 +1008,7 @@ bool Connections::operator==(const Connections &o) const {
     const auto& segments = cellD.segments;
     for(const auto seg : segments) {
       NTA_CHECK( dataForSegment(seg) == o.dataForSegment(seg) ) << "CellData equals: segmentData";
-      //3.synapses: 
+      //3.synapses:
       const auto& synapses = dataForSegment(seg).synapses;
       for(const auto syn : synapses) {
         NTA_CHECK(dataForSynapse(syn) == o.dataForSynapse(syn) ) << "SegmentData equals: synapseData";
@@ -844,7 +1018,7 @@ bool Connections::operator==(const Connections &o) const {
 
 
   NTA_CHECK (connectedThreshold_ == o.connectedThreshold_ ) << "Connections equals: connectedThreshold_";
-  NTA_CHECK (iteration_ == o.iteration_ ) << "Connections equals: iteration_"; 
+  NTA_CHECK (iteration_ == o.iteration_ ) << "Connections equals: iteration_";
 
   NTA_CHECK(potentialSynapsesForPresynapticCell_ == o.potentialSynapsesForPresynapticCell_);
   NTA_CHECK(connectedSynapsesForPresynapticCell_ == o.connectedSynapsesForPresynapticCell_);
@@ -864,4 +1038,3 @@ bool Connections::operator==(const Connections &o) const {
   }
   return true;
 }
-

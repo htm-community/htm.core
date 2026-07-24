@@ -448,15 +448,46 @@ void SpatialPooler::initialize(
   inhibitionRadius_ = 0;
 
   connections_.initialize(numColumns_, synPermConnected_);
+
+  // Pre-reserve synapse storage to avoid reallocations during the loop
+  // below. potentialPct_ is the per-column density of the potential pool,
+  // so numColumns_ * numInputs_ * potentialPct_ is a safe upper bound on
+  // the total number of synapses created here. reserve() with an over-
+  // estimate is harmless (never shrinks), so we round generously. This
+  // skips the ~22 doublings the synapses_ vector would otherwise go
+  // through, each of which copies every existing SynapseData entry.
+  const Size estimatedSynapses =
+      static_cast<Size>(numColumns_ * numInputs_ * potentialPct_) + 1;
+  connections_.reserveBuffers(estimatedSynapses, numColumns_);
+
+  // Hoisted reusable buffers for the per-column loop below. Previously each
+  // iteration allocated (and freed) two fresh input-sized dense vectors --
+  // `potential` and `perm` -- plus the neighborhood scan buffer inside
+  // initMapPotential_. At 8192 inputs that is ~72KB of malloc/free churn per
+  // column x 2048 columns x N parallel HTM modules, all fighting the
+  // allocator during the multi-threaded pyramid build. With the in-place
+  // variants each buffer is allocated once and overwritten in place.
+  vector<UInt>       columnInputsScratch;
+  vector<UInt>       potential;
+  vector<Permanence> perm;
+  columnInputsScratch.reserve(numInputs_);
+
   for (Size i = 0; i < numColumns_; ++i) {
     connections_.createSegment( static_cast<CellIdx>(i) , 1 /* max segments per cell is fixed for SP to 1 */);
+   
 
-    // Note: initMapPotential_ & initPermanence_ return dense arrays.
-    vector<UInt> potential = initMapPotential_((UInt)i, wrapAround_);
-    vector<Permanence> perm = initPermanence_(potential, initConnectedPct_);
+    // Note: initMapPotential_ & initPermanence_ fill dense arrays in place.
+    initMapPotential_((UInt)i, wrapAround_, columnInputsScratch, potential);
+    initPermanence_(potential, initConnectedPct_, perm);
     for(size_t presyn = 0; presyn < numInputs_; presyn++) {
       if( potential[presyn] )
-        connections_.createSynapse( static_cast<Segment>(i), static_cast<htm::CellIdx>(presyn), perm[presyn] );
+        // skipDuplicateCheck=true: this loop visits each presynaptic index
+        // at most once (they are the distinct set bits of `potential`), so
+        // no duplicate synapse can be created on this fresh segment. This
+        // turns the whole potential-pool build from O(pool^2) to O(pool) per
+        // column -- the dominant cost of SP construction at realistic pool
+        // sizes. Behaviour is identical to the checked path.
+        connections_.createSynapse( static_cast<Segment>(i), static_cast<htm::CellIdx>(presyn), perm[presyn], /*skipDuplicateCheck=*/true );
     }
 
     connections_.raisePermanencesToThreshold( (Segment)i, stimulusThreshold_ );
@@ -471,16 +502,33 @@ void SpatialPooler::initialize(
 }
 
 
-const vector<SynapseIdx> SpatialPooler::compute(const SDR &input, const bool learn, SDR &active) {
+vector<SynapseIdx> SpatialPooler::compute(const SDR &input, const bool learn, SDR &active) {
   input.reshape(  inputDimensions_ );
   active.reshape( columnDimensions_ );
   updateBookeepingVars_(learn);
 
-  const auto& overlaps = connections_.computeActivity(input.getSparse(), learn);
+  // Own the activity vector directly: computeActivity returns by value, so
+  // `auto overlaps = ...` is guaranteed copy-elision (C++17) -- the vector is
+  // constructed exactly once. The previous `const auto&`-to-temporary +
+  // const-qualified by-value return forced TWO extra full copies of this
+  // 2048-entry vector on every step (one here, one in the caller/binding).
+  // Returning a plain (non-const) value lets the caller move it out.
+  auto overlaps = connections_.computeActivity(input.getSparse(), learn);
 
-  boostOverlaps_(overlaps, boostedOverlaps_);
-
-  auto activeVector = inhibitColumns_(boostedOverlaps_);
+  vector<CellIdx> activeVector;
+  if (boostStrength_ < static_cast<Real>(htm::Epsilon)) {
+    // Boosting disabled (PyHTM's default): inhibit directly on the raw
+    // integer overlap counts. boostOverlaps_ would only have copied them
+    // element-by-element into a float vector (2048 conversions + a full
+    // write, every step); the templated inhibition selects the bit-exact
+    // same winners from the integers, so the copy is pure waste here.
+    // Note: boostedOverlaps_ is intentionally NOT refreshed on this path --
+    // it exists solely to feed the inhibition (see getBoostedOverlaps docs).
+    activeVector = inhibitColumns_(overlaps);
+  } else {
+    boostOverlaps_(overlaps, boostedOverlaps_);
+    activeVector = inhibitColumns_(boostedOverlaps_);
+  }
   // Notify the active SDR that its internal data vector has changed.  Always
   // call SDR's setter methods even if when modifying the SDR's own data
   // inplace.
@@ -534,18 +582,35 @@ UInt SpatialPooler::initMapColumn_(UInt column) const {
 
 
 vector<UInt> SpatialPooler::initMapPotential_(UInt column, bool wrapAround) {
+  // Thin wrapper kept for the non-hot callers (e.g. connect-API paths) and
+  // for API compatibility. The per-column init loop uses the in-place
+  // variant below with reusable buffers instead.
+  vector<UInt> columnInputsScratch;
+  vector<UInt> potential;
+  initMapPotential_(column, wrapAround, columnInputsScratch, potential);
+  return potential;
+}
+
+void SpatialPooler::initMapPotential_(UInt column, bool wrapAround,
+                                      vector<UInt> &columnInputsScratch,
+                                      vector<UInt> &potential) {
   NTA_ASSERT(column < numColumns_);
   const UInt centerInput = initMapColumn_(column);
 
-  vector<UInt> columnInputs;
+  columnInputsScratch.clear();
   for (const auto input : Neighborhood(centerInput, potentialRadius_, inputDimensions_, wrapAround, /*skip_center=*/false)) {
-      columnInputs.push_back(input);
+      columnInputsScratch.push_back(input);
   }
 
-  const UInt numPotential = static_cast<UInt>(round(columnInputs.size() * potentialPct_));
-  const auto selectedInputs = rng_.sample<UInt>(columnInputs, numPotential);
-  const vector<UInt> potential = VectorHelpers::sparseToBinary<UInt>(selectedInputs, numInputs_);
-  return potential;
+  const UInt numPotential = static_cast<UInt>(round(columnInputsScratch.size() * potentialPct_));
+  const auto selectedInputs = rng_.sample<UInt>(columnInputsScratch, numPotential);
+  // Dense mask written in place (was: VectorHelpers::sparseToBinary, which
+  // allocated a fresh numInputs_-sized vector on every call). Same values.
+  potential.assign(numInputs_, 0u);
+  for (const auto sparseIdx : selectedInputs) {
+    NTA_ASSERT(sparseIdx < potential.size()) << "attemping to insert out of bounds element! " << sparseIdx;
+    potential[sparseIdx] = 1u;
+  }
 }
 
 
@@ -561,7 +626,16 @@ Permanence SpatialPooler::initPermNonConnected_() {
 
 vector<Permanence> SpatialPooler::initPermanence_(const vector<UInt> &potential, //TODO make potential sparse
                                                   const Real connectedPct) {
-  vector<Permanence> perm(numInputs_, 0);
+  // Thin wrapper kept for the non-hot callers; identical values.
+  vector<Permanence> perm;
+  initPermanence_(potential, connectedPct, perm);
+  return perm;
+}
+
+void SpatialPooler::initPermanence_(const vector<UInt> &potential,
+                                    const Real connectedPct,
+                                    vector<Permanence> &perm) {
+  perm.assign(numInputs_, 0);
   for (size_t i = 0; i < numInputs_; i++) {
     if (potential[i] < 1) {
       continue;
@@ -573,8 +647,6 @@ vector<Permanence> SpatialPooler::initPermanence_(const vector<UInt> &potential,
       perm[i] = initPermNonConnected_();
     }
   }
-
-  return perm;
 }
 
 
@@ -633,19 +705,16 @@ void SpatialPooler::updateMinDutyCyclesLocal_() {
 void SpatialPooler::updateDutyCycles_(const vector<SynapseIdx> &overlaps,
                                       SDR &active) {
 
-  // Turn the overlaps array into an SDR. Convert directly to flat-sparse to
-  // avoid copies and  type convertions.
-  SDR newOverlap({ numColumns_ });
-  auto &overlapsSparseVec = newOverlap.getSparse();
-  for (UInt i = 0; i < numColumns_; i++) {
-    if( overlaps[i] != 0 )
-      overlapsSparseVec.push_back( i );
-  }
-  newOverlap.setSparse( overlapsSparseVec );
-
+  // The overlap duty cycle only cares WHICH columns had a non-zero overlap.
+  // The original code built a temporary SDR from the overlaps vector on every
+  // learning step just to hand its sparse view to the helper. The raw-vector
+  // helper overload below consumes `overlaps` directly -- same math, zero
+  // temporary SDR (its construction cost heap allocations per step, per
+  // module). `active` is already an SDR whose sparse view is cached, so the
+  // SDR overload stays the right tool for it.
   const UInt period = std::min(dutyCyclePeriod_, iterationNum_);
 
-  updateDutyCyclesHelper_(overlapDutyCycles_, newOverlap, period);
+  updateDutyCyclesHelper_(overlapDutyCycles_, overlaps, period);
   updateDutyCyclesHelper_(activeDutyCycles_, active, period);
 }
 
@@ -737,6 +806,28 @@ void SpatialPooler::updateDutyCyclesHelper_(vector<Real> &dutyCycles,
 }
 
 
+void SpatialPooler::updateDutyCyclesHelper_(vector<Real> &dutyCycles,
+                                            const vector<SynapseIdx> &newValues,
+                                            const UInt period) {
+  NTA_ASSERT(period > 0);
+  NTA_ASSERT(dutyCycles.size() == newValues.size()) << "duty dims: " << dutyCycles.size() << " overlaps dims: " << newValues.size();
+
+  // Same exponential moving average as the SDR overload above, consuming the
+  // raw overlap counts directly ("active" == count != 0). Per element the
+  // operations and their order are identical to the split-loop version
+  // (multiply by decay, then add the increment where non-zero), so the
+  // floating-point results are bit-exact -- without materialising a
+  // temporary SDR first.
+  const Real decay = (period - 1) / static_cast<Real>(period);
+  const Real increment = 1.0f / period;  // All non-zero values are 1.
+  for (Size i = 0; i < dutyCycles.size(); i++) {
+    dutyCycles[i] *= decay;
+    if (newValues[i] != 0)
+      dutyCycles[i] += increment;
+  }
+}
+
+
 void SpatialPooler::updateBoostFactors_() {
   if (globalInhibition_) {
     updateBoostFactorsGlobal_();
@@ -757,6 +848,15 @@ void applyBoosting_(const size_t i,
 
 
 void SpatialPooler::updateBoostFactorsGlobal_() {
+  // Boosting disabled (boostStrength_ ~ 0.0, PyHTM's default): applyBoosting_
+  // would return without writing for every single column, so the whole loop
+  // below -- 2048 calls + the target-density math, every learning step of
+  // every module -- is a no-op. Skip it up front; the resulting state is
+  // identical.
+  if (boostStrength_ < static_cast<Real>(htm::Epsilon)) {
+    return;
+  }
+
   Permanence targetDensity;
   if (numActiveColumnsPerInhArea_ > 0) {
     UInt inhibitionArea = 1u;
@@ -777,6 +877,12 @@ void SpatialPooler::updateBoostFactorsGlobal_() {
 
 
 void SpatialPooler::updateBoostFactorsLocal_() {
+  // Boosting disabled: same no-op skip as updateBoostFactorsGlobal_, here it
+  // additionally saves the per-column neighborhood duty-cycle sums.
+  if (boostStrength_ < static_cast<Real>(htm::Epsilon)) {
+    return;
+  }
+
   for (UInt i = 0; i < numColumns_; ++i) {
     Real localActivityDensity = 0.0f;
     
@@ -828,7 +934,8 @@ UInt getAreaND_(const vector<UInt>& dimensions, const Real radius) {
   return static_cast<UInt>(area);
 }
 
-vector<CellIdx> SpatialPooler::inhibitColumns_(const vector<Real> &overlaps) const {
+template<typename OverlapT>
+vector<CellIdx> SpatialPooler::inhibitColumns_(const vector<OverlapT> &overlaps) const {
   Real density = localAreaDensity_; //option 1: used localAreaDensity
   if (numActiveColumnsPerInhArea_ > 0) { //option 2: used numActiveColumnsPerInhArea in constructor
     const UInt inhibitionArea = getAreaND_(columnDimensions_, static_cast<Real>(inhibitionRadius_)); 
@@ -847,15 +954,24 @@ vector<CellIdx> SpatialPooler::inhibitColumns_(const vector<Real> &overlaps) con
 }
 
 
-vector<CellIdx> SpatialPooler::inhibitColumnsGlobal_(const vector<Real> &overlaps,
+template<typename OverlapT>
+vector<CellIdx> SpatialPooler::inhibitColumnsGlobal_(const vector<OverlapT> &overlaps,
                                           const Real density) const {
   const UInt numDesired = static_cast<UInt>((density * numColumns_));
   NTA_CHECK(numDesired > 0) << "Not enough columns (" << numColumns_ << ") "
                             << "for desired density (" << density << ").";
   // Sort the columns by the amount of overlap.  First make a list of all of the
   // column indexes.
-  vector<CellIdx> activeColumns(numColumns_);
-  std::iota(activeColumns.begin(), activeColumns.end(), 0); //fill with sequence 0,1,..N
+  //
+  // The index list lives in a reusable mutable scratch member instead of a
+  // fresh numColumns_-sized vector: this runs EVERY compute() step of every
+  // module, and the original also finished with shrink_to_fit() -- one more
+  // allocation + copy per step for a vector that the caller immediately
+  // swaps into an SDR anyway. The scratch is fully rewritten (iota) each
+  // call, so no state leaks between steps; only the ~numDesired winning
+  // indices are copied out.
+  inhibitScratch_.resize(numColumns_);
+  std::iota(inhibitScratch_.begin(), inhibitScratch_.end(), 0); //fill with sequence 0,1,..N
 
   // Compare the column indexes by their overlap.
   auto compare = [&overlaps](const UInt &a, const UInt &b) -> bool
@@ -867,26 +983,27 @@ vector<CellIdx> SpatialPooler::inhibitColumnsGlobal_(const vector<Real> &overlap
   // elements about the Nth element, with all elements on their correct side of
   // the Nth element.
   std::nth_element(
-    activeColumns.begin(),
-    activeColumns.begin() + numDesired,
-    activeColumns.end(),
+    inhibitScratch_.begin(),
+    inhibitScratch_.begin() + numDesired,
+    inhibitScratch_.end(),
     compare);
-  // Remove the columns which lost the competition.
-  activeColumns.resize(numDesired);
   // Finish sorting the winner columns by their overlap.
-  std::sort(activeColumns.begin(), activeColumns.end(), compare);
-  // Remove sub-threshold winners
-  while( !activeColumns.empty() &&
-         overlaps[activeColumns.back()] < stimulusThreshold_) {
-      activeColumns.pop_back();
+  std::sort(inhibitScratch_.begin(), inhibitScratch_.begin() + numDesired, compare);
+  // Remove sub-threshold winners (same back-trim rule as the original
+  // pop_back loop: winners are sorted descending, so trimming from the back
+  // drops exactly the sub-threshold tail).
+  UInt numActive = numDesired;
+  while( numActive > 0 &&
+         overlaps[inhibitScratch_[numActive - 1]] < stimulusThreshold_) {
+      --numActive;
   }
-  
-  activeColumns.shrink_to_fit();
-  return activeColumns;
+
+  return vector<CellIdx>(inhibitScratch_.begin(), inhibitScratch_.begin() + numActive);
 }
 
 
-vector<CellIdx> SpatialPooler::inhibitColumnsLocal_(const vector<Real> &overlaps,
+template<typename OverlapT>
+vector<CellIdx> SpatialPooler::inhibitColumnsLocal_(const vector<OverlapT> &overlaps,
                                                     const Real density) const {
   NTA_ASSERT(overlaps.size() == numColumns_);
   vector<CellIdx> activeColumns;
@@ -1044,3 +1161,14 @@ bool SpatialPooler::operator==(const SpatialPooler& o) const{
 
 }
 
+
+
+// Explicit instantiations for the two overlap element types actually used:
+// Real (the boosted path) and SynapseIdx (the raw-counts fast path when
+// boosting is disabled).
+template vector<CellIdx> SpatialPooler::inhibitColumns_<Real>(const vector<Real>&) const;
+template vector<CellIdx> SpatialPooler::inhibitColumns_<SynapseIdx>(const vector<SynapseIdx>&) const;
+template vector<CellIdx> SpatialPooler::inhibitColumnsGlobal_<Real>(const vector<Real>&, const Real) const;
+template vector<CellIdx> SpatialPooler::inhibitColumnsGlobal_<SynapseIdx>(const vector<SynapseIdx>&, const Real) const;
+template vector<CellIdx> SpatialPooler::inhibitColumnsLocal_<Real>(const vector<Real>&, const Real) const;
+template vector<CellIdx> SpatialPooler::inhibitColumnsLocal_<SynapseIdx>(const vector<SynapseIdx>&, const Real) const;

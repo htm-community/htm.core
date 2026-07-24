@@ -1,56 +1,60 @@
-.metadata
-.idea
-*.manifest
-*.cache
-*~
-*.DS_Store
-*.swp
-*.pyc
-*.pkl
-__pycache__
+# Single-HTM-Core -- ignores for a standalone checkout of this subtree.
+#
+# This directory builds on its own (`python htm_install.py`), so it carries
+# its own ignore list rather than relying on a parent repository's.
 
-# Coverage files 
-.coverage
-htmlcov/
-
-# IDE Visual Studio files
-.vs
-
-# IDE VSCode project files
-/nbproject/
-.vscode
-.ycm_extra_conf.py
-
-# KDevelop
-.kdev4
-nupic.core.kdev4
-htm.core.kdev4
-
-# Eclipse project files
-.cproject
-.project
-.settings/language.settings.xml
-
-# Build files
+# --- Build output -----------------------------------------------------
 build/
+build-*/
+cmake-build-*/
+out/
+_deps/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+install_manifest.txt
+Makefile
+*.ninja
+.ninja_deps
+.ninja_log
+
+# --- Generated at configure/build time --------------------------------
+# Written by the build from the project version; not a source file.
+VERSION
+Version.hpp
+*.pc
+
+# --- Compiled artifacts -----------------------------------------------
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.pdb
+*.ilk
+*.exp
+
+# --- Python -----------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
 dist/
-junit-test-results.xml
-.pytest_cache
+.venv/
+venv/
 
-# Test Output files
-bindings/py/tests/*.stream
-TestOutputDir/*
-RDSE_testPickle
+# --- runner_example.py output -----------------------------------------
+runner_example_scores.csv
 
-# /
-/.gdb_history
-
-# Doxygen generated doc
-html/
-
-# produced by swarming, parameter optimization scripts
-*_ae/
-
-## Experiments. Files produced by experiments
-/py/htm/advanced/examples/thalamus/images/
-
+# --- Editor / OS noise ------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db

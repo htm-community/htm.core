@@ -514,6 +514,35 @@ public:
     void intersection(std::vector<const SparseDistributedRepresentation*> inputs);
 
     /**
+     * Set difference: turns this SDR into (minuend AND NOT subtrahend) --
+     * the bits active in `minuend` but not in `subtrahend`.
+     *
+     * Added for PyHTM: its residual / anomaly-detector (RTM) mode forwards
+     * "active minus predicted" up the hierarchy on EVERY step of every
+     * module, and previously computed it in Python via sets / np.setdiff1d.
+     * Both input sparse views are already sorted (SDR invariant), so this is
+     * a single std::set_difference pass -- no dense conversion, no hashing,
+     * no allocations beyond the output sparse vector.
+     *
+     * Both inputs must have the same dimensions as this SDR. Safe to call
+     * inplace (this SDR may also be one of the inputs). Example:
+     *
+     *     SDR A({ 10 });
+     *     SDR B({ 10 });
+     *     A.setSparse(SDR_sparse_t({ 0, 1, 2, 3 }));
+     *     B.setSparse(SDR_sparse_t({ 2, 3, 4, 5 }));
+     *     SDR C({ 10 });
+     *     C.subtract(A, B);   // C.getSparse() == { 0, 1 }
+     *
+     * @param minuend     SDR whose active bits are kept ...
+     * @param subtrahend  ... unless they are also active here.
+     * @returns this SDR, to allow method chaining.
+     */
+    SparseDistributedRepresentation& subtract(
+                      const SparseDistributedRepresentation &minuend,
+                      const SparseDistributedRepresentation &subtrahend);
+
+    /**
      * This method calculates the set union of the active bits in all input SDRs.
      *
      * @params This method has two overloads:

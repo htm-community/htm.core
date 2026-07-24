@@ -133,9 +133,18 @@ bool RandomDistributedScalarEncoder::check_parameters() {
   const auto number_of_trials = 1000u;
   SDR a({parameters.size});
   SDR b({parameters.size});
-  a.randomize(parameters.sparsity);
+  // BUGFIX (determinism): upstream called the single-argument randomize(),
+  // which seeds from the hardware entropy source -- so for borderline
+  // parameters this acceptance check was a per-RUN coin flip: the very same
+  // (size, sparsity, seed) configuration could construct fine today and
+  // throw tomorrow. The trial RNG is now derived from the encoder's own
+  // seed, making construction a pure function of its parameters. Encoding
+  // output was never affected (it is MurmurHash-based); only the
+  // accept/reject behaviour of this check is made reproducible.
+  Random trial_rng( args_.seed );
+  a.randomize(parameters.sparsity, trial_rng);
   for(auto i = 0u; i < number_of_trials; i++) {
-    b.randomize(parameters.sparsity);
+    b.randomize(parameters.sparsity, trial_rng);
     Real overlap = Real(a.getOverlap(b)) / parameters.activeBits;
     if( overlap > maximum_overlap ) {
       return false;

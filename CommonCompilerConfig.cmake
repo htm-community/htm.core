@@ -153,6 +153,14 @@ if(MSVC)
 	set(INTERNAL_CXX_FLAGS /permissive- /W3 /Gm- /EHsc /FC /nologo /Zc:__cplusplus 
 							$<$<CONFIG:Release>:/O2 /Oi /Gy  /GL /MD> 
 							$<$<CONFIG:Debug>:/Ob0 /Od /Zi /sdl /WX /RTC1 /MDd>)
+	# Adaptive CPU level: appends /arch:AVX2 or /arch:AVX512 resolved by
+	# DetectMarch.cmake (build-host probe / HTM_MARCH override / nothing
+	# when the user already passed /arch: via CL or CXXFLAGS).
+	include(DetectMarch)
+	htm_detect_march()
+	if(HTM_MARCH_FLAGS)
+		list(APPEND INTERNAL_CXX_FLAGS ${HTM_MARCH_FLAGS})
+	endif()
 	#linker flags
 	if("${BITNESS}" STREQUAL "32")
 		set(machine "-MACHINE:X86")
@@ -326,6 +334,46 @@ else()
         if(NOT ${CMAKE_SYSTEM_PROCESSOR} STREQUAL "armv7l")
                 set(optimization_flags_cc ${optimization_flags_cc} -mtune=generic)
         endif()
+        # Adaptive CPU level: appends -march=x86-64-vN (or explicit feature
+        # flags) resolved by DetectMarch.cmake -- probe of the build host,
+        # HTM_MARCH cache/env override, or nothing when the user already
+        # passed -march via CXXFLAGS. See DetectMarch.cmake.
+        include(DetectMarch)
+        htm_detect_march()
+        if(HTM_MARCH_FLAGS)
+                set(optimization_flags_cc ${optimization_flags_cc} ${HTM_MARCH_FLAGS})
+                # March levels with FMA enable floating-point contraction,
+                # which changes double/float results at fresh multiply-add
+                # sites. Pin contraction OFF project-wide so numeric output
+                # is IDENTICAL across every HTM_MARCH level (and matches
+                # baseline builds). Integer SIMD (the hot HTM loops) is
+                # unaffected.
+                set(optimization_flags_cc ${optimization_flags_cc} -ffp-contract=off)
+        endif()
+
+        # -- bold configuration summary: one glance shows every automatic
+        #    decision (OS, compiler, CPU level, engines, LTO). ANSI bold
+        #    cyan on capable terminals; plain otherwise.
+        string(ASCII 27 _esc)
+        if(WIN32)
+                set(_b "")
+                set(_r "")
+        else()
+                set(_b "${_esc}[1;36m")
+                set(_r "${_esc}[0m")
+        endif()
+        if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/VERSION")
+                file(READ "${CMAKE_CURRENT_LIST_DIR}/VERSION" _htm_ver)
+        else()
+                set(_htm_ver "")
+        endif()
+        string(STRIP "${_htm_ver}" _htm_ver)
+        message(STATUS "${_b}================ PyHTM-core ${_htm_ver} -- build configuration ================${_r}")
+        message(STATUS "${_b}  OS / arch    : ${CMAKE_SYSTEM_NAME} / ${CMAKE_SYSTEM_PROCESSOR}${_r}")
+        message(STATUS "${_b}  Compiler     : ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}${_r}")
+        message(STATUS "${_b}  HTM_MARCH    : ${HTM_MARCH} -> ${HTM_MARCH_RESOLVED} ${HTM_MARCH_FLAGS}${_r}")
+        message(STATUS "${_b}  HTM_LTO      : ${HTM_LTO} (pyramid-scope: ${HTM_LTO_PYRAMID})${_r}")
+        message(STATUS "${_b}==============================================================================${_r}")
 	# Disable lto because it was taking too much RAM  (1/21/2025, dkeeney)
         #if(${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU" AND NOT MINGW)
         #        # NOTE -flto must go together in both cc and ld flags; also, it's presently incompatible
@@ -372,7 +420,7 @@ else()
 	# Settings for internal htm.core code
 	set(INTERNAL_CXX_FLAGS ${debug_specific_compile_flags} ${cxx_flags_unoptimized} ${internal_compiler_warning_flags} ${optimization_flags_cc})
 	set(INTERNAL_LINKER_FLAGS ${debug_specific_linker_flags} ${linker_flags_unoptimized} ${optimization_flags_lt})
-	
+
 	#
 	# Common system libraries for shared libraries and executables
 	#
@@ -400,5 +448,3 @@ string (REPLACE ";" " " INTERNAL_CXX_FLAGS_STR "${INTERNAL_CXX_FLAGS}")
 # Provide a string variant of the INTERNAL_LINKER_FLAGS list
 string (REPLACE ";" " " INTERNAL_LINKER_FLAGS_STR "${INTERNAL_LINKER_FLAGS}")
 set_property(GLOBAL PROPERTY LINK_LIBRARIES ${INTERNAL_LINKER_FLAGS})
-
-

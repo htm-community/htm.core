@@ -265,15 +265,11 @@ special, it is replaced with the system time  The default seed is 0.)",
             py::arg("sparsity"),
             py::arg("seed") = 0u);
 
-        py::module::import("htm.bindings.math");
-        py_SDR.def("randomize",
-            [](SDR *self, Real sparsity, Random rng) {
-            self->randomize( sparsity, rng );
-            return self; },
-R"(This overload accepts Random Number Generators (RNG) intead of a random seed.
-RNGs must be instances of "htm.bindings.math.Random".)",
-                py::arg("sparsity"),
-                py::arg("rng"));
+        // NOTE (PyHTM trim): the second randomize() overload that accepted an
+        // htm.bindings.math.Random instance was removed together with the
+        // math binding module -- importing it here at module-init time was
+        // the sdr module's only runtime dependency on math. The seed-based
+        // overload above is the one PyHTM (and effectively everyone) uses.
 
         py_SDR.def("addNoise", [](SDR *self, Real fractionNoise, UInt seed) {
             Random rng( seed );
@@ -358,6 +354,32 @@ Example Usage:
 )");
         py_SDR.def("intersection", [](SDR *self, vector<const SDR*> inputs)
             { self->intersection(inputs); return self; });
+
+        py_SDR.def("subtract", [](SDR *self, SDR& minuend, SDR& subtrahend)
+            {
+                // Sorted-sparse set difference in C++. Added for PyHTM's
+                // residual (RTM) path, which runs this every step; the
+                // set_difference pass is pure C++, so drop the GIL around it.
+                {
+                    py::gil_scoped_release release;
+                    self->subtract(minuend, subtrahend);
+                }
+                return self;
+            },
+R"(Set difference: this SDR becomes the bits active in `minuend` but NOT active
+in `subtrahend` (minuend AND NOT subtrahend). Both inputs must have the same
+dimensions as this SDR. This method modifies this SDR and discards its current
+value!  Returns this SDR for chaining.
+
+Example Usage:
+    A = SDR( 10 )
+    B = SDR( 10 )
+    X = SDR( 10 )
+    A.sparse = [0, 1, 2, 3]
+    B.sparse =       [2, 3, 4, 5]
+    X.subtract( A, B )
+    X.sparse -> [0, 1]
+)");
 
         py_SDR.def("union", [](SDR *self, SDR& inp1, SDR& inp2)
             { self->set_union({ &inp1, &inp2}); return self; },
