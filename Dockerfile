@@ -22,9 +22,9 @@ LABEL org.opencontainers.image.source="https://github.com/htm-community/htm.core
 RUN echo "Switching from $host to $arch" && uname -a
 
 ## Stage 1: build of htm.core on the target platform
-# Official Python 3.13 on Alpine (amd64, arm64, etc).
+# Official Python 3.14 on Alpine (amd64, arm64, etc).
 #  https://hub.docker.com/_/python
-FROM --platform=linux/${arch} python:3.13-alpine3.21 as build
+FROM --platform=linux/${arch} python:3.14-alpine3.21 as build
 ARG arch
 #copy value of ARG arch from above
 RUN echo "Building HTM for ${arch}" && uname -a

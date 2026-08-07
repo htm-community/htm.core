@@ -1,0 +1,43 @@
+name: AMD64 Debian
+
+on:
+  # run every day of the week at 02:00
+  schedule:
+    - cron: 0 2 * * *
+  workflow_dispatch:
+
+jobs:
+ build-amd64-debian-docker:
+  name: Build for AMD64 on Docker (Debian slim)
+  runs-on: ubuntu-24.04
+  steps:
+    - name: Check Docker and Docker Compose versions
+      run: |
+        docker --version
+        docker compose version
+
+    - uses: actions/checkout@v2
+
+    - name: AMD64 Debian build
+      run: |
+        docker build -f Dockerfile.debian -t htm-amd64-debian-docker --build-arg arch=amd64 .
+
+    - name: Tests
+      run: |
+        docker run htm-amd64-debian-docker python htm_test.py
+
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Tag and push Docker image
+      run: |
+        docker tag htm-amd64-debian-docker ghcr.io/${{ github.repository }}/htm-amd64-debian:latest
+        docker tag htm-amd64-debian-docker ghcr.io/${{ github.repository }}/htm-amd64-debian:${{ github.run_number }}
+        docker tag htm-amd64-debian-docker ghcr.io/${{ github.repository }}/htm-amd64-debian:${{ github.sha }}
+        docker push ghcr.io/${{ github.repository }}/htm-amd64-debian:latest
+        docker push ghcr.io/${{ github.repository }}/htm-amd64-debian:${{ github.run_number }}
+        docker push ghcr.io/${{ github.repository }}/htm-amd64-debian:${{ github.sha }}
