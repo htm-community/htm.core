@@ -586,7 +586,7 @@ public:
    * @param increment  Change in permanence for synapses with active presynapses.
    * @param decrement  Change in permanence for synapses with inactive presynapses.
    * @param pruneZeroSynapses (default false) If set, synapses that reach minPermanence(aka. "zero")
-   *        are removed. This is used in TemporalMemory.
+   *        are removed. This is used in TemporalMemory and SpatialPooler.  
    * @param segmentThreshold (optional) (default 0) Minimum number of connected synapses for a segment
    *        to be considered active. @see raisePermenencesToThreshold(). Equivalent to `SP.stimulusThreshold`.
    *        If `pruneZeroSynapses` is used and synapses are removed, if the amount of synapses drops below 
@@ -640,7 +640,7 @@ public:
    */
   void synapseCompetition(  const Segment    segment,
                             const SynapseIdx minimumSynapses,
-                            const SynapseIdx maximumSynapses);
+                            const SynapseIdx maximumSynapses); 
 
 
   /**
