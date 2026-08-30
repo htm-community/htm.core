@@ -1,0 +1,16 @@
+authorName: default
+experimentName: example_mnist
+trialConcurrency: 6
+trainingServicePlatform: local
+searchSpacePath: search_space.json
+useAnnotation: false
+tuner:
+  #choice: TPE, Random, Anneal, Evolution, BatchTuner, MetisTuner
+  #SMAC (SMAC should be installed through nnictl)
+  builtinTunerName: TPE
+  classArgs:
+    optimize_mode: maximize
+trial:
+  command: python3 mnist.py
+  codeDir: .
+  gpuNum: 0
