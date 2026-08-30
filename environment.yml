@@ -1,0 +1,29 @@
+## HTMcore dependencies manged by Conda
+# Use as an alternative to cmake & pip requirements.txt
+#
+name: htmcore
+channels:
+  - default
+  - conda-forge
+dependencies:
+  - python==3.7
+  - pip>=19.3
+  - git
+  - cmake>=3.14 #>=3.7, >=3.14 needed for MSVC 2019
+  - conda-forge:clangxx>=9.0
+  - conda-forge:eigen
+  - conda-forge:gtest
+  - conda-forge:cereal
+  - pip:
+    - setuptools>=34.4.0 # needed for Windows with MSVC
+    - wheel>=0.33.6
+    ## for python bindings (in /bindings/py/)
+    - numpy>=1.15
+    - pytest==4.6.5 #4.6.x series is last to support python2, once py2 dropped, we can switch to 5.x
+    ## for python code (in /py/)
+    - hexy>=1.4.3 # for grid cell encoder
+    - mock>=1.0.1 # for anomaly likelihood test
+    - prettytable>=0.7.2 # for monitor-mixin in htm.advanced (+its tests)
+    ## optional dependencies, such as for visualizations, running examples
+    # should be placed in setup.py section extras_require. Install those by
+    # pip install htm.core[examples]
